@@ -65,7 +65,16 @@ router.post('/register', async (req, res) => {
       [user.id, hashToken(refreshToken)]
     );
 
-    res.json({ user: { id: user.id, username: user.username, displayName: user.display_name }, token: accessToken, refreshToken });
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name,
+        systemRole: user.system_role
+      },
+      token: accessToken,
+      refreshToken
+    });
   } catch (e) {
     console.error('[auth/register] error:', e);
     res.status(500).json({ error: e.message });
@@ -93,7 +102,16 @@ router.post('/login', async (req, res) => {
       [user.id, hashToken(refreshToken)]
     );
 
-    res.json({ user: { id: user.id, username: user.username, displayName: user.display_name }, token: accessToken, refreshToken });
+    res.json({
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name,
+        systemRole: user.system_role
+      },
+      token: accessToken,
+      refreshToken
+    });
   } catch (e) {
     console.error('[auth/login] error:', e);
     res.status(500).json({ error: e.message });

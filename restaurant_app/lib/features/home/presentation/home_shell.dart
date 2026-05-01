@@ -109,7 +109,7 @@ class _HomeShellState extends State<HomeShell> {
     final noteController = TextEditingController();
     final searchController = TextEditingController();
     String? selectedRestaurant;
-    AccountRole selectedRole = AccountRole.staff;
+    AccountRole selectedRole = AccountRole.waiter;
 
     await showModalBottomSheet<void>(
       context: context,
@@ -130,19 +130,21 @@ class _HomeShellState extends State<HomeShell> {
                   TextField(controller: searchController, decoration: const InputDecoration(labelText: 'Tìm tên cơ sở'), onChanged: (_) => setModalState(() {})),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    initialValue: selectedRestaurant,
+                    value: selectedRestaurant,
                     items: filtered.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                     onChanged: (value) => setModalState(() => selectedRestaurant = value),
                     decoration: const InputDecoration(labelText: 'Chọn cơ sở'),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<AccountRole>(
-                    initialValue: selectedRole,
+                    value: selectedRole,
                     items: const [
-                      DropdownMenuItem(value: AccountRole.staff, child: Text('Nhân viên')),
-                      DropdownMenuItem(value: AccountRole.manager, child: Text('Quản lý')),
+                      DropdownMenuItem(value: AccountRole.waiter, child: Text('Phục vụ (Waiter)')),
+                      DropdownMenuItem(value: AccountRole.cashier, child: Text('Thu ngân (Cashier)')),
+                      DropdownMenuItem(value: AccountRole.kitchen, child: Text('Bếp (Kitchen)')),
+                      DropdownMenuItem(value: AccountRole.manager, child: Text('Quản lý (Manager)')),
                     ],
-                    onChanged: (value) => setModalState(() => selectedRole = value ?? AccountRole.staff),
+                    onChanged: (value) => setModalState(() => selectedRole = value ?? AccountRole.waiter),
                     decoration: const InputDecoration(labelText: 'Vai trò mong muốn'),
                   ),
                   const SizedBox(height: 12),
@@ -163,6 +165,53 @@ class _HomeShellState extends State<HomeShell> {
               ),
             );
           },
+        );
+      },
+    );
+  }
+
+  Future<void> _openApproveSheet() async {
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        if (widget.pendingApprovals.isEmpty) {
+          return const Padding(
+            padding: EdgeInsets.all(24),
+            child: Text('Không có yêu cầu nhân sự nào đang chờ.'),
+          );
+        }
+
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.7,
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              const Text('Phê duyệt nhân sự', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Divider(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: widget.pendingApprovals.length,
+                  itemBuilder: (context, index) {
+                    final req = widget.pendingApprovals[index];
+                    return Card(
+                      child: ListTile(
+                        title: Text('User: ${req.username}'),
+                        subtitle: Text('Vai trò: ${req.requestedRole.name}\nGhi chú: ${req.note}'),
+                        trailing: FilledButton(
+                          onPressed: () async {
+                            await widget.onApproveStaff(req.id);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          child: const Text('Duyệt'),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

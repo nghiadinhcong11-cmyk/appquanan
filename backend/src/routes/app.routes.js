@@ -12,7 +12,7 @@ router.get('/health', (_req, res) => res.json({ ok: true }));
 
 router.get('/bootstrap', async (_req, res) => {
   try {
-    const accounts = await pool.query('SELECT username, display_name FROM users ORDER BY created_at DESC');
+    const accounts = await pool.query('SELECT username, display_name, system_role FROM users ORDER BY created_at DESC');
     const ownerApplications = await pool.query(`
       SELECT oa.id::text id, u.username, oa.restaurant_name, oa.proof, oa.status
       FROM owner_applications oa JOIN users u ON u.id = oa.user_id
@@ -30,7 +30,12 @@ router.get('/bootstrap', async (_req, res) => {
       JOIN restaurants r ON r.id=ra.restaurant_id`);
 
     res.json({
-      accounts: accounts.rows.map(a => ({ username: a.username, password: '', displayName: a.display_name })),
+      accounts: accounts.rows.map(a => ({
+        username: a.username,
+        password: '',
+        displayName: a.display_name,
+        systemRole: a.system_role
+      })),
       ownerApplications: ownerApplications.rows.map(o => ({ id: o.id, username: o.username, restaurantName: o.restaurant_name, proof: o.proof, status: o.status })),
       staffRoleRequests: staffRoleRequests.rows.map(r => ({ id: r.id, username: r.username, restaurantName: r.restaurant_name, requestedRole: r.requested_role, note: r.note, status: r.status })),
       roleAssignments: roleAssignments.rows.map(r => ({ username: r.username, restaurantName: r.restaurant_name, role: r.role })),
