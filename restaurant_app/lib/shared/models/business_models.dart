@@ -1,9 +1,18 @@
 ﻿class MenuItemRecord {
-  const MenuItemRecord({required this.id, required this.name, required this.price, required this.createdBy});
+  const MenuItemRecord({
+    required this.id,
+    required this.name,
+    required this.price,
+    this.description = '',
+    this.imageUrl = '',
+    required this.createdBy,
+  });
 
   final int id;
   final String name;
   final int price;
+  final String description;
+  final String imageUrl;
   final String createdBy;
 }
 

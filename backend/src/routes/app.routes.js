@@ -115,7 +115,7 @@ router.get('/menu', auth, async (req, res) => {
   try {
     const restaurantName = String(req.query.restaurantName || '');
     const rows = await pool.query(
-      `SELECT m.id::text id, m.name, m.price, u.username created_by
+      `SELECT m.id::text id, m.name, m.price, m.description, m.image_url, u.username created_by
        FROM menus m
        JOIN restaurants r ON r.id = m.restaurant_id
        JOIN users u ON u.id = m.created_by
@@ -123,7 +123,14 @@ router.get('/menu', auth, async (req, res) => {
        ORDER BY m.created_at DESC`,
       [restaurantName]
     );
-    res.json({ items: rows.rows.map(r => ({ id: r.id, name: r.name, price: Number(r.price), createdBy: r.created_by })) });
+    res.json({ items: rows.rows.map(r => ({
+      id: r.id,
+      name: r.name,
+      price: Number(r.price),
+      description: r.description || '',
+      imageUrl: r.image_url || '',
+      createdBy: r.created_by
+    })) });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -131,7 +138,7 @@ router.get('/menu', auth, async (req, res) => {
 
 router.post('/menu', auth, async (req, res) => {
   try {
-    const { restaurantName, name, price } = req.body;
+    const { restaurantName, name, price, description, imageUrl } = req.body;
     const restaurantQ = await pool.query('SELECT id FROM restaurants WHERE lower(name)=lower($1) LIMIT 1', [restaurantName]);
     if (!restaurantQ.rowCount) return res.status(404).json({ error: 'Restaurant not found' });
     const restaurantId = restaurantQ.rows[0].id;
@@ -139,7 +146,10 @@ router.post('/menu', auth, async (req, res) => {
     const allowed = req.user.systemRole === 'admin' || await hasRestaurantRole(pool, req.user.sub, restaurantId, ['owner', 'manager']);
     if (!allowed) return res.status(403).json({ error: 'Forbidden' });
 
-    await pool.query('INSERT INTO menus(restaurant_id, name, price, created_by) VALUES($1,$2,$3,$4)', [restaurantId, name, price, req.user.sub]);
+    await pool.query(
+      'INSERT INTO menus(restaurant_id, name, price, description, image_url, created_by) VALUES($1,$2,$3,$4,$5,$6)',
+      [restaurantId, name, price, description || '', imageUrl || '', req.user.sub]
+    );
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

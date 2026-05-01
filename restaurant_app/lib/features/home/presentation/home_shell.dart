@@ -25,6 +25,8 @@ class HomeShell extends StatefulWidget {
     required this.onMockAdminApproveOwner,
     required this.onLogout,
     required this.api,
+    this.isAdmin = false,
+    this.allOwnerApplications = const [],
   });
 
   final String displayName;
@@ -41,6 +43,8 @@ class HomeShell extends StatefulWidget {
   final Future<void> Function(String appId) onMockAdminApproveOwner;
   final Future<void> Function() onLogout;
   final HttpApiService api;
+  final bool isAdmin;
+  final List<OwnerApplication> allOwnerApplications;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
@@ -168,36 +172,49 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  Future<void> _openApproveSheet() async {
+  Future<void> _openAdminApproveSheet() async {
     await showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       builder: (context) {
-        if (widget.pendingApprovals.isEmpty) {
+        final pendingApps = widget.allOwnerApplications.where((e) => e.status == RequestStatus.pending).toList();
+        if (pendingApps.isEmpty) {
           return const Padding(
             padding: EdgeInsets.all(24),
-            child: Text('Không có yêu cầu nhân sự nào đang chờ duyệt.'),
+            child: Text('Không có đơn đăng ký chủ quán nào đang chờ.'),
           );
         }
 
-        return ListView.builder(
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.7,
           padding: const EdgeInsets.all(12),
-          itemCount: widget.pendingApprovals.length,
-          itemBuilder: (context, index) {
-            final request = widget.pendingApprovals[index];
-            return Card(
-              child: ListTile(
-                title: Text(request.username),
-                subtitle: Text('${request.requestedRole == AccountRole.manager ? 'Quản lý' : 'Nhân viên'} • ${request.note}'),
-                trailing: FilledButton(
-                  onPressed: () async {
-                    await widget.onApproveStaff(request.id);
-                    if (context.mounted) Navigator.pop(context);
+          child: Column(
+            children: [
+              const Text('Phê duyệt chủ quán (Admin)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const Divider(),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: pendingApps.length,
+                  itemBuilder: (context, index) {
+                    final app = pendingApps[index];
+                    return Card(
+                      child: ListTile(
+                        title: Text('Cơ sở: ${app.restaurantName}'),
+                        subtitle: Text('Người đăng ký: ${app.username}\nMinh chứng: ${app.proof}'),
+                        trailing: FilledButton(
+                          onPressed: () async {
+                            await widget.onMockAdminApproveOwner(app.id);
+                            if (context.mounted) Navigator.pop(context);
+                          },
+                          child: const Text('Duyệt'),
+                        ),
+                      ),
+                    );
                   },
-                  child: const Text('Duyệt'),
                 ),
               ),
-            );
-          },
+            ],
+          ),
         );
       },
     );
@@ -225,11 +242,19 @@ class _HomeShellState extends State<HomeShell> {
                       const SizedBox(height: 4),
                       Text(widget.roleLabel, style: const TextStyle(color: Colors.white70)),
                       Text(_activeRestaurant, style: const TextStyle(color: Colors.white70)),
+                      if (widget.isAdmin) const Text('VAI TRÒ: ADMIN HỆ THỐNG', style: TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
                     ]),
                   ),
                 ],
               ),
             ),
+            if (widget.isAdmin)
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings, color: Colors.orange),
+                title: const Text('ADMIN: Duyệt chủ quán', style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: _openAdminApproveSheet,
+              ),
+            const Divider(),
             ListTile(
               leading: const Icon(Icons.storefront, color: Colors.red),
               title: Text(ownerStatus == null ? 'Đăng ký làm chủ quán' : 'Hồ sơ chủ quán: ${_statusLabel(ownerStatus)}'),

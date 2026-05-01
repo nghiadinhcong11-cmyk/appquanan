@@ -59,6 +59,8 @@ CREATE TABLE IF NOT EXISTS menus (
   id BIGSERIAL PRIMARY KEY,
   restaurant_id BIGINT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
   name VARCHAR(255) NOT NULL,
+  description TEXT,
+  image_url TEXT,
   price NUMERIC(12,2) NOT NULL CHECK (price >= 0),
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()

@@ -9,22 +9,28 @@ class UserAccount {
     required this.username,
     required this.password,
     required this.displayName,
+    this.systemRole = 'user',
   });
 
   final String username;
   final String password;
   final String displayName;
+  final String systemRole;
+
+  bool get isAdmin => systemRole == 'admin';
 
   Map<String, dynamic> toMap() => {
         'username': username,
         'password': password,
         'displayName': displayName,
+        'systemRole': systemRole,
       };
 
   static UserAccount fromMap(Map<String, dynamic> map) => UserAccount(
         username: map['username'] as String,
-        password: map['password'] as String,
+        password: map['password'] as String? ?? '',
         displayName: map['displayName'] as String,
+        systemRole: map['systemRole'] as String? ?? 'user',
       );
 }
 

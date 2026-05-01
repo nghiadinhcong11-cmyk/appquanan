@@ -35,18 +35,26 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   Future<void> _openAddMenuDialog(BuildContext context) async {
     final nameController = TextEditingController();
     final priceController = TextEditingController();
+    final descController = TextEditingController();
+    final imageController = TextEditingController();
 
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Thêm món vào menu'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Tên món')),
-            const SizedBox(height: 12),
-            TextField(controller: priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Giá bán')),
-          ],
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Tên món')),
+              const SizedBox(height: 12),
+              TextField(controller: priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Giá bán')),
+              const SizedBox(height: 12),
+              TextField(controller: descController, decoration: const InputDecoration(labelText: 'Mô tả (không bắt buộc)')),
+              const SizedBox(height: 12),
+              TextField(controller: imageController, decoration: const InputDecoration(labelText: 'Link hình ảnh (không bắt buộc)')),
+            ],
+          ),
         ),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
@@ -59,6 +67,8 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
                 restaurantName: widget.restaurantName,
                 name: name,
                 price: price,
+                description: descController.text.trim(),
+                imageUrl: imageController.text.trim(),
                 createdBy: widget.username,
               );
               if (!mounted) return;
@@ -90,8 +100,17 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
                   final item = menu[index];
                   return Card(
                     child: ListTile(
+                      leading: item.imageUrl.isNotEmpty
+                        ? Image.network(item.imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.fastfood))
+                        : const Icon(Icons.fastfood),
                       title: Text(item.name),
-                      subtitle: Text('Nhập bởi: ${item.createdBy}'),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (item.description.isNotEmpty) Text(item.description, style: const TextStyle(fontSize: 12)),
+                          Text('Nhập bởi: ${item.createdBy}', style: const TextStyle(fontSize: 10)),
+                        ],
+                      ),
                       trailing: Text(_formatMoney(item.price)),
                     ),
                   );

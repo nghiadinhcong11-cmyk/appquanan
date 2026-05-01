@@ -99,7 +99,12 @@ class HttpApiService {
       if (token != null) await _storage.saveToken(token);
       if (refresh != null) await _storage.saveRefreshToken(refresh);
       final userMap = Map<String, dynamic>.from(data['user'] as Map);
-      return UserAccount(username: userMap['username'] as String, password: '', displayName: userMap['displayName'] as String);
+      return UserAccount(
+        username: userMap['username'] as String,
+        password: '',
+        displayName: userMap['displayName'] as String,
+        systemRole: data['user']['systemRole'] ?? 'user',
+      );
     } catch (_) {
       return null;
     }
@@ -140,15 +145,36 @@ class HttpApiService {
   Future<void> approveOwnerApplication(String appId) async => _postJson('/owner-applications/$appId/approve', {});
   Future<void> approveStaffRequest(String requestId) async => _postJson('/staff-requests/$requestId/approve', {});
 
-  Future<void> addMenuItem({required String restaurantName, required String name, required int price, required String createdBy}) async {
-    await _postJson('/menu', {'restaurantName': restaurantName, 'name': name, 'price': price, 'createdBy': createdBy});
+  Future<void> addMenuItem({
+    required String restaurantName,
+    required String name,
+    required int price,
+    String description = '',
+    String imageUrl = '',
+    required String createdBy,
+  }) async {
+    await _postJson('/menu', {
+      'restaurantName': restaurantName,
+      'name': name,
+      'price': price,
+      'description': description,
+      'imageUrl': imageUrl,
+      'createdBy': createdBy
+    });
   }
 
   Future<List<MenuItemRecord>> getMenuItems(String restaurantName) async {
     final data = await _getJson(_u('/menu', {'restaurantName': restaurantName}));
     return (data['items'] as List<dynamic>)
         .map((e) => Map<String, dynamic>.from(e as Map))
-        .map((m) => MenuItemRecord(id: int.parse(m['id'].toString()), name: m['name'] as String, price: (m['price'] as num).toInt(), createdBy: m['createdBy'] as String))
+        .map((m) => MenuItemRecord(
+              id: int.parse(m['id'].toString()),
+              name: m['name'] as String,
+              price: (m['price'] as num).toInt(),
+              description: m['description'] as String? ?? '',
+              imageUrl: m['imageUrl'] as String? ?? '',
+              createdBy: m['createdBy'] as String,
+            ))
         .toList();
   }
 
