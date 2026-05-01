@@ -1,4 +1,5 @@
-﻿const express = require('express');
+﻿require('dotenv').config();
+const express = require('express');
 const cors = require('cors');
 const { pool } = require('./db');
 const authRoutes = require('./routes/auth.routes');

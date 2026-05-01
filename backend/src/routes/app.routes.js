@@ -5,6 +5,9 @@ const { getOrCreateRestaurant, hasRestaurantRole } = require('./helpers');
 
 const router = express.Router();
 
+// Trang chủ mặc định - Đặt ở đây là đúng
+router.get('/', (_req, res) => res.send('Backend của Quán Ăn đã sẵn sàng!'));
+
 router.get('/health', (_req, res) => res.json({ ok: true }));
 
 router.get('/bootstrap', async (_req, res) => {
