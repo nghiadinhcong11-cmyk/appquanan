@@ -6,20 +6,43 @@ const { pool } = require('../db');
 const { auth } = require('../middleware/auth');
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'dev_secret_change_me';
-const REFRESH_SECRET = process.env.JWT_REFRESH_SECRET || 'dev_refresh_secret_change_me';
 
-function signAccess(user) {
-  return jwt.sign({ sub: user.id, username: user.username, systemRole: user.system_role }, JWT_SECRET, { expiresIn: '12h' });
+function getSecrets() {
+  const jwtSecret = process.env.JWT_SECRET;
+  const refreshSecret = process.env.JWT_REFRESH_SECRET;
+  if (!jwtSecret || !refreshSecret) {
+    return null;
+  }
+  return { jwtSecret, refreshSecret };
 }
-function signRefresh(user) {
-  return jwt.sign({ sub: user.id, username: user.username }, REFRESH_SECRET, { expiresIn: '14d' });
+
+function signAccess(user, secret) {
+  return jwt.sign({ sub: user.id, username: user.username, systemRole: user.system_role }, secret, { expiresIn: '12h' });
+}
+function signRefresh(user, refreshSecret) {
+  return jwt.sign({ sub: user.id, username: user.username }, refreshSecret, { expiresIn: '14d' });
 }
 function hashToken(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function ensureDeps(res) {
+  if (!pool) {
+    res.status(503).json({ error: 'Database is unavailable' });
+    return null;
+  }
+  const secrets = getSecrets();
+  if (!secrets) {
+    res.status(500).json({ error: 'JWT env is not configured' });
+    return null;
+  }
+  return secrets;
+}
+
 router.post('/register', async (req, res) => {
+  const secrets = ensureDeps(res);
+  if (!secrets) return;
+
   try {
     const { displayName, username, password } = req.body;
     if (!displayName || !username || !password) return res.status(400).json({ error: 'Missing fields' });
@@ -34,20 +57,25 @@ router.post('/register', async (req, res) => {
     );
     const user = inserted.rows[0];
 
-    const accessToken = signAccess(user);
-    const refreshToken = signRefresh(user);
+    const accessToken = signAccess(user, secrets.jwtSecret);
+    const refreshToken = signRefresh(user, secrets.refreshSecret);
     await pool.query(
-      'INSERT INTO refresh_tokens(user_id, token_hash, expires_at) VALUES($1,$2,now() + interval \''14 days\'')',
+      `INSERT INTO refresh_tokens(user_id, token_hash, expires_at)
+       VALUES($1, $2, now() + interval '14 days')`,
       [user.id, hashToken(refreshToken)]
     );
 
     res.json({ user: { id: user.id, username: user.username, displayName: user.display_name }, token: accessToken, refreshToken });
   } catch (e) {
+    console.error('[auth/register] error:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 router.post('/login', async (req, res) => {
+  const secrets = ensureDeps(res);
+  if (!secrets) return;
+
   try {
     const { username, password } = req.body;
     const q = await pool.query('SELECT id, username, display_name, password_hash, system_role FROM users WHERE username=$1', [username]);
@@ -57,25 +85,30 @@ router.post('/login', async (req, res) => {
     const ok = await bcrypt.compare(password, user.password_hash);
     if (!ok) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
 
-    const accessToken = signAccess(user);
-    const refreshToken = signRefresh(user);
+    const accessToken = signAccess(user, secrets.jwtSecret);
+    const refreshToken = signRefresh(user, secrets.refreshSecret);
     await pool.query(
-      'INSERT INTO refresh_tokens(user_id, token_hash, expires_at) VALUES($1,$2,now() + interval \''14 days\'')',
+      `INSERT INTO refresh_tokens(user_id, token_hash, expires_at)
+       VALUES($1, $2, now() + interval '14 days')`,
       [user.id, hashToken(refreshToken)]
     );
 
     res.json({ user: { id: user.id, username: user.username, displayName: user.display_name }, token: accessToken, refreshToken });
   } catch (e) {
+    console.error('[auth/login] error:', e);
     res.status(500).json({ error: e.message });
   }
 });
 
 router.post('/refresh', async (req, res) => {
+  const secrets = ensureDeps(res);
+  if (!secrets) return;
+
   try {
     const { refreshToken } = req.body;
     if (!refreshToken) return res.status(400).json({ error: 'Missing refresh token' });
 
-    const payload = jwt.verify(refreshToken, REFRESH_SECRET);
+    const payload = jwt.verify(refreshToken, secrets.refreshSecret);
     const tokenHash = hashToken(refreshToken);
 
     const tokenRow = await pool.query(
@@ -88,14 +121,16 @@ router.post('/refresh', async (req, res) => {
     if (!userQ.rowCount) return res.status(401).json({ error: 'User not found' });
 
     const user = userQ.rows[0];
-    const accessToken = signAccess(user);
+    const accessToken = signAccess(user, secrets.jwtSecret);
     res.json({ token: accessToken });
-  } catch (e) {
+  } catch (_e) {
     res.status(401).json({ error: 'Invalid refresh token' });
   }
 });
 
 router.post('/logout', auth, async (req, res) => {
+  if (!pool) return res.status(503).json({ error: 'Database is unavailable' });
+
   try {
     const { refreshToken } = req.body;
     if (refreshToken) {
@@ -103,6 +138,7 @@ router.post('/logout', auth, async (req, res) => {
     }
     res.json({ ok: true });
   } catch (e) {
+    console.error('[auth/logout] error:', e);
     res.status(500).json({ error: e.message });
   }
 });

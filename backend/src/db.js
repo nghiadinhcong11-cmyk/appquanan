@@ -1,14 +1,25 @@
-﻿const dotenv = require('dotenv');
-const { Pool } = require('pg');
+﻿const { Pool } = require('pg');
 
-dotenv.config();
+const databaseUrl = process.env.DATABASE_URL;
 
-const DATABASE_URL = process.env.DATABASE_URL;
-if (!DATABASE_URL) throw new Error('Missing DATABASE_URL');
+let pool = null;
 
-const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: process.env.PG_SSL === 'true' ? { rejectUnauthorized: false } : false,
-});
+if (!databaseUrl) {
+  console.error('[DB] Missing DATABASE_URL environment variable. Database features will be unavailable.');
+} else {
+  try {
+    pool = new Pool({
+      connectionString: databaseUrl,
+      ssl: { rejectUnauthorized: false },
+    });
+
+    pool.on('error', (err) => {
+      console.error('[DB] Unexpected pool error:', err);
+    });
+  } catch (err) {
+    console.error('[DB] Failed to initialize pool:', err);
+    pool = null;
+  }
+}
 
 module.exports = { pool };

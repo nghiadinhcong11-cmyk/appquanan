@@ -23,9 +23,32 @@ class HttpApiService {
     };
   }
 
+  Future<bool> _tryRefreshToken() async {
+    final refresh = await _storage.loadRefreshToken();
+    if (refresh == null || refresh.isEmpty) return false;
+    try {
+      final res = await http.post(
+        _u('/auth/refresh'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'refreshToken': refresh}),
+      ).timeout(const Duration(seconds: 12));
+      if (res.statusCode >= 400) return false;
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final token = data['token'] as String?;
+      if (token == null || token.isEmpty) return false;
+      await _storage.saveToken(token);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
   Future<Map<String, dynamic>> _getJson(Uri uri) async {
     try {
-      final res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 12));
+      var res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 12));
+      }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode >= 400) throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
       return data;
@@ -37,9 +60,10 @@ class HttpApiService {
   Future<Map<String, dynamic>> _postJson(String path, Map<String, dynamic> body) async {
     final uri = _u(path);
     try {
-      final res = await http
-          .post(uri, headers: await _headers(), body: jsonEncode(body))
-          .timeout(const Duration(seconds: 12));
+      var res = await http.post(uri, headers: await _headers(), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.post(uri, headers: await _headers(), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode >= 400) throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
       return data;
@@ -50,29 +74,20 @@ class HttpApiService {
 
   Future<ApiData> loadData() async {
     final data = await _getJson(_u('/bootstrap'));
-
     final accounts = (data['accounts'] as List<dynamic>)
         .map((e) => UserAccount.fromMap(Map<String, dynamic>.from(e as Map)))
         .toList();
-
     final ownerApplications = (data['ownerApplications'] as List<dynamic>)
         .map((e) => OwnerApplication.fromMap(Map<String, dynamic>.from(e as Map)))
         .toList();
-
     final staffRoleRequests = (data['staffRoleRequests'] as List<dynamic>)
         .map((e) => StaffRoleRequest.fromMap(Map<String, dynamic>.from(e as Map)))
         .toList();
-
     final roleAssignments = (data['roleAssignments'] as List<dynamic>)
         .map((e) => RoleAssignment.fromMap(Map<String, dynamic>.from(e as Map)))
         .toList();
 
-    return ApiData(
-      accounts: accounts,
-      ownerApplications: ownerApplications,
-      staffRoleRequests: staffRoleRequests,
-      roleAssignments: roleAssignments,
-    );
+    return ApiData(accounts: accounts, ownerApplications: ownerApplications, staffRoleRequests: staffRoleRequests, roleAssignments: roleAssignments);
   }
 
   Future<UserAccount?> login(String username, String password) async {
@@ -80,9 +95,9 @@ class HttpApiService {
       final data = await _postJson('/auth/login', {'username': username, 'password': password});
       await _storage.saveSessionUsername(username);
       final token = data['token'] as String?;
-      if (token != null) {
-        await _storage.saveToken(token);
-      }
+      final refresh = data['refreshToken'] as String?;
+      if (token != null) await _storage.saveToken(token);
+      if (refresh != null) await _storage.saveRefreshToken(refresh);
       final userMap = Map<String, dynamic>.from(data['user'] as Map);
       return UserAccount(username: userMap['username'] as String, password: '', displayName: userMap['displayName'] as String);
     } catch (_) {
@@ -94,9 +109,9 @@ class HttpApiService {
     try {
       final data = await _postJson('/auth/register', {'displayName': displayName, 'username': username, 'password': password});
       final token = data['token'] as String?;
-      if (token != null) {
-        await _storage.saveToken(token);
-      }
+      final refresh = data['refreshToken'] as String?;
+      if (token != null) await _storage.saveToken(token);
+      if (refresh != null) await _storage.saveRefreshToken(refresh);
       await _storage.saveSessionUsername(username);
       return null;
     } catch (e) {
@@ -123,7 +138,6 @@ class HttpApiService {
   }
 
   Future<void> approveOwnerApplication(String appId) async => _postJson('/owner-applications/$appId/approve', {});
-
   Future<void> approveStaffRequest(String requestId) async => _postJson('/staff-requests/$requestId/approve', {});
 
   Future<void> addMenuItem({required String restaurantName, required String name, required int price, required String createdBy}) async {
@@ -146,13 +160,7 @@ class HttpApiService {
     final data = await _getJson(_u('/bills', {'restaurantName': restaurantName}));
     return (data['bills'] as List<dynamic>)
         .map((e) => Map<String, dynamic>.from(e as Map))
-        .map((m) => BillRecord(
-              id: int.parse(m['id'].toString()),
-              tableName: m['tableName'] as String,
-              total: (m['total'] as num).toInt(),
-              itemCount: (m['itemCount'] as num).toInt(),
-              createdAt: DateTime.parse(m['createdAt'] as String),
-            ))
+        .map((m) => BillRecord(id: int.parse(m['id'].toString()), tableName: m['tableName'] as String, total: (m['total'] as num).toInt(), itemCount: (m['itemCount'] as num).toInt(), createdAt: DateTime.parse(m['createdAt'] as String)))
         .toList();
   }
 
@@ -161,5 +169,13 @@ class HttpApiService {
     return TodayStats(billCount: (data['billCount'] as num).toInt(), revenue: (data['revenue'] as num).toInt());
   }
 
-  Future<void> logout() => _storage.clearSession();
+  Future<void> logout() async {
+    final refresh = await _storage.loadRefreshToken();
+    if (refresh != null) {
+      try {
+        await _postJson('/auth/logout', {'refreshToken': refresh});
+      } catch (_) {}
+    }
+    await _storage.clearSession();
+  }
 }
