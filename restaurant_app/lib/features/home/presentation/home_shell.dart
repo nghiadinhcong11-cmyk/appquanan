@@ -11,8 +11,7 @@ import 'overview_screen.dart';
 class HomeShell extends StatefulWidget {
   const HomeShell({
     super.key,
-    required this.displayName,
-    required this.username,
+    required this.user,
     required this.roleLabel,
     required this.restaurantName,
     required this.ownerApplication,
@@ -25,12 +24,10 @@ class HomeShell extends StatefulWidget {
     required this.onMockAdminApproveOwner,
     required this.onLogout,
     required this.api,
-    this.isAdmin = false,
     this.allOwnerApplications = const [],
   });
 
-  final String displayName;
-  final String username;
+  final UserAccount user;
   final String roleLabel;
   final String restaurantName;
   final OwnerApplication? ownerApplication;
@@ -43,7 +40,6 @@ class HomeShell extends StatefulWidget {
   final Future<void> Function(String appId) onMockAdminApproveOwner;
   final Future<void> Function() onLogout;
   final HttpApiService api;
-  final bool isAdmin;
   final List<OwnerApplication> allOwnerApplications;
 
   @override
@@ -60,7 +56,7 @@ class _HomeShellState extends State<HomeShell> {
         TablesScreen(api: widget.api, restaurantName: _activeRestaurant),
         const OrdersScreen(),
         BillingScreen(api: widget.api, restaurantName: _activeRestaurant),
-        MenuManagementScreen(api: widget.api, restaurantName: _activeRestaurant, username: widget.username),
+        MenuManagementScreen(api: widget.api, restaurantName: _activeRestaurant, username: widget.user.username),
       ];
 
   List<String> get _titles => const ['Tổng quan', 'Sơ đồ bàn', 'Bán hàng', 'Lịch sử bill', 'Menu'];
@@ -223,6 +219,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final ownerStatus = widget.ownerApplication?.status;
+    final user = widget.user;
 
     return Scaffold(
       drawer: Drawer(
@@ -238,17 +235,17 @@ class _HomeShellState extends State<HomeShell> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(widget.displayName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      Text(user.displayName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 4),
                       Text(widget.roleLabel, style: const TextStyle(color: Colors.white70)),
                       Text(_activeRestaurant, style: const TextStyle(color: Colors.white70)),
-                      if (widget.isAdmin) const Text('VAI TRÒ: ADMIN HỆ THỐNG', style: TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
+                      if (user.isAdmin) const Text('VAI TRÒ: ADMIN HỆ THỐNG', style: TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
                     ]),
                   ),
                 ],
               ),
             ),
-            if (widget.isAdmin)
+            if (user.isAdmin)
               ListTile(
                 leading: const Icon(Icons.admin_panel_settings, color: Colors.orange),
                 title: const Text('ADMIN: Duyệt chủ quán', style: TextStyle(fontWeight: FontWeight.bold)),
@@ -271,7 +268,7 @@ class _HomeShellState extends State<HomeShell> {
               title: const Text('Yêu cầu vai trò nhân sự/quản lý'),
               onTap: _openStaffRequestForm,
             ),
-            if (ownerStatus == RequestStatus.approved)
+            if (user.canManageStaff)
               ListTile(
                 leading: const Icon(Icons.verified_user, color: Colors.red),
                 title: Text('Duyệt yêu cầu nhân sự (${widget.pendingApprovals.length})'),
@@ -292,12 +289,12 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.home), label: 'Tổng quan'),
-          NavigationDestination(icon: Icon(Icons.map), label: 'Sơ đồ'),
-          NavigationDestination(icon: Icon(Icons.receipt), label: 'Bán hàng'),
-          NavigationDestination(icon: Icon(Icons.request_page), label: 'Bill'),
-          NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
+        destinations: [
+          const NavigationDestination(icon: Icon(Icons.home), label: 'Tổng quan'),
+          const NavigationDestination(icon: Icon(Icons.map), label: 'Sơ đồ'),
+          const NavigationDestination(icon: Icon(Icons.receipt), label: 'Bán hàng'),
+          const NavigationDestination(icon: Icon(Icons.request_page), label: 'Bill'),
+          if (user.canManageInventory) const NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
         ],
       ),
     );

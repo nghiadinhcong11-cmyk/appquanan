@@ -1,6 +1,6 @@
 ﻿const express = require('express');
 const { pool } = require('../db');
-const { auth, permitSystemRoles } = require('../middleware/auth');
+const { auth, permitSystemRoles, permitRestaurantRoles } = require('../middleware/auth');
 const { getOrCreateRestaurant, hasRestaurantRole } = require('./helpers');
 
 const router = express.Router();
@@ -136,15 +136,12 @@ router.get('/menu', auth, async (req, res) => {
   }
 });
 
-router.post('/menu', auth, async (req, res) => {
+router.post('/menu', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
     const { restaurantName, name, price, description, imageUrl } = req.body;
     const restaurantQ = await pool.query('SELECT id FROM restaurants WHERE lower(name)=lower($1) LIMIT 1', [restaurantName]);
     if (!restaurantQ.rowCount) return res.status(404).json({ error: 'Restaurant not found' });
     const restaurantId = restaurantQ.rows[0].id;
-
-    const allowed = req.user.systemRole === 'admin' || await hasRestaurantRole(pool, req.user.sub, restaurantId, ['owner', 'manager']);
-    if (!allowed) return res.status(403).json({ error: 'Forbidden' });
 
     await pool.query(
       'INSERT INTO menus(restaurant_id, name, price, description, image_url, created_by) VALUES($1,$2,$3,$4,$5,$6)',
@@ -172,15 +169,12 @@ router.get('/bills', auth, async (req, res) => {
   }
 });
 
-router.post('/bills', auth, async (req, res) => {
+router.post('/bills', auth, permitRestaurantRoles(['owner', 'manager', 'cashier', 'waiter']), async (req, res) => {
   try {
     const { restaurantName, tableName, total, itemCount } = req.body;
     const restaurantQ = await pool.query('SELECT id FROM restaurants WHERE lower(name)=lower($1) LIMIT 1', [restaurantName]);
     if (!restaurantQ.rowCount) return res.status(404).json({ error: 'Restaurant not found' });
     const restaurantId = restaurantQ.rows[0].id;
-
-    const allowed = req.user.systemRole === 'admin' || await hasRestaurantRole(pool, req.user.sub, restaurantId, ['owner', 'manager', 'staff']);
-    if (!allowed) return res.status(403).json({ error: 'Forbidden' });
 
     await pool.query('INSERT INTO orders(restaurant_id, table_name, total, item_count, created_by) VALUES($1,$2,$3,$4,$5)', [restaurantId, tableName, total, itemCount, req.user.sub]);
     res.json({ ok: true });
@@ -189,7 +183,7 @@ router.post('/bills', auth, async (req, res) => {
   }
 });
 
-router.get('/stats/today', auth, async (req, res) => {
+router.get('/stats/today', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
     const restaurantName = String(req.query.restaurantName || '');
     const rows = await pool.query(
@@ -201,6 +195,55 @@ router.get('/stats/today', auth, async (req, res) => {
     );
     const row = rows.rows[0] || { c: 0, s: 0 };
     res.json({ billCount: row.c || 0, revenue: Number(row.s || 0) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Staff Management Routes
+router.get('/restaurants/staff', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
+  try {
+    const { restaurantId } = req.query;
+    const rows = await pool.query(
+      `SELECT u.id::text, u.username, u.display_name, ra.role
+       FROM role_assignments ra
+       JOIN users u ON u.id = ra.user_id
+       WHERE ra.restaurant_id = $1`,
+      [restaurantId]
+    );
+    res.json({ staff: rows.rows.map(r => ({
+      id: r.id,
+      username: r.username,
+      displayName: r.display_name,
+      role: r.role
+    })) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.post('/restaurants/staff/update-role', auth, permitRestaurantRoles(['owner']), async (req, res) => {
+  try {
+    const { restaurantId, userId, role } = req.body;
+    await pool.query(
+      `UPDATE role_assignments SET role = $1
+       WHERE restaurant_id = $2 AND user_id = $3`,
+      [role, restaurantId, userId]
+    );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/restaurants/staff', auth, permitRestaurantRoles(['owner']), async (req, res) => {
+  try {
+    const { restaurantId, userId } = req.query;
+    await pool.query(
+      `DELETE FROM role_assignments WHERE restaurant_id = $1 AND user_id = $2`,
+      [restaurantId, userId]
+    );
+    res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

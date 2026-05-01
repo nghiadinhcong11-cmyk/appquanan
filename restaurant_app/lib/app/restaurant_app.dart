@@ -213,8 +213,7 @@ class _RestaurantAppState extends State<RestaurantApp> {
       }
 
       home = HomeShell(
-        displayName: user.displayName,
-        username: user.username,
+        user: user,
         roleLabel: activeRoleLabel,
         restaurantName: activeRestaurant,
         ownerApplication: myOwnerApp,
@@ -227,6 +226,7 @@ class _RestaurantAppState extends State<RestaurantApp> {
         onMockAdminApproveOwner: _mockAdminApproveOwner,
         onLogout: _logout,
         api: _api,
+        allOwnerApplications: _data.ownerApplications,
       );
     }
 

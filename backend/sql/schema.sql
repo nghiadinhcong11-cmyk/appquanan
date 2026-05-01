@@ -27,9 +27,10 @@ CREATE TABLE IF NOT EXISTS role_assignments (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   restaurant_id BIGINT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
-  role VARCHAR(50) NOT NULL, -- 'owner', 'manager', 'staff'
+  role VARCHAR(50) NOT NULL, -- 'owner', 'manager', 'cashier', 'waiter', 'kitchen'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (user_id, restaurant_id)
+  UNIQUE (user_id, restaurant_id),
+  CONSTRAINT role_assignments_role_check CHECK (role IN ('owner', 'manager', 'cashier', 'waiter', 'kitchen'))
 );
 
 CREATE TABLE IF NOT EXISTS owner_applications (

@@ -1,4 +1,6 @@
 ﻿const jwt = require('jsonwebtoken');
+const { pool } = require('../db');
+const { hasRestaurantRole } = require('../routes/helpers');
 
 function getJwtSecret() {
   return process.env.JWT_SECRET;
@@ -29,4 +31,25 @@ function permitSystemRoles(roles = []) {
   };
 }
 
-module.exports = { auth, permitSystemRoles };
+/**
+ * Middleware to check restaurant-specific roles.
+ * Requires restaurantId to be present in headers (x-restaurant-id) or req.body/req.query
+ */
+function permitRestaurantRoles(allowedRoles = []) {
+  return async (req, res, next) => {
+    if (req.user && req.user.systemRole === 'admin') return next();
+
+    const restaurantId = req.headers['x-restaurant-id'] || req.body.restaurantId || req.query.restaurantId;
+    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurant context' });
+
+    try {
+      const hasRole = await hasRestaurantRole(pool, req.user.sub, restaurantId, allowedRoles);
+      if (!hasRole) return res.status(403).json({ error: 'Insufficient permissions for this restaurant' });
+      next();
+    } catch (err) {
+      res.status(500).json({ error: 'Authorization check failed' });
+    }
+  };
+}
+
+module.exports = { auth, permitSystemRoles, permitRestaurantRoles };

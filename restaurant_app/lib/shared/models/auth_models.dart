@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-enum AccountRole { manager, staff }
+enum AccountRole { owner, manager, cashier, waiter, kitchen }
 
 enum RequestStatus { pending, approved, rejected }
 
@@ -10,20 +10,30 @@ class UserAccount {
     required this.password,
     required this.displayName,
     this.systemRole = 'user',
+    this.currentRestaurantRole,
   });
 
   final String username;
   final String password;
   final String displayName;
   final String systemRole;
+  final AccountRole? currentRestaurantRole;
 
   bool get isAdmin => systemRole == 'admin';
+
+  // Helper getters for RBAC UI
+  bool get canManageInventory => isAdmin || [AccountRole.owner, AccountRole.manager].contains(currentRestaurantRole);
+  bool get canManageStaff => isAdmin || [AccountRole.owner, AccountRole.manager].contains(currentRestaurantRole);
+  bool get isKitchen => currentRestaurantRole == AccountRole.kitchen;
+  bool get isWaiter => currentRestaurantRole == AccountRole.waiter;
+  bool get isCashier => currentRestaurantRole == AccountRole.cashier;
 
   Map<String, dynamic> toMap() => {
         'username': username,
         'password': password,
         'displayName': displayName,
         'systemRole': systemRole,
+        'currentRestaurantRole': currentRestaurantRole?.name,
       };
 
   static UserAccount fromMap(Map<String, dynamic> map) => UserAccount(
@@ -31,6 +41,9 @@ class UserAccount {
         password: map['password'] as String? ?? '',
         displayName: map['displayName'] as String,
         systemRole: map['systemRole'] as String? ?? 'user',
+        currentRestaurantRole: map['currentRestaurantRole'] != null
+            ? AccountRole.values.firstWhere((e) => e.name == map['currentRestaurantRole'])
+            : null,
       );
 }
 

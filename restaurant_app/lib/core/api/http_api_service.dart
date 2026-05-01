@@ -15,11 +15,12 @@ class HttpApiService {
 
   Uri _u(String path, [Map<String, String>? q]) => Uri.parse('$baseUrl$path').replace(queryParameters: q);
 
-  Future<Map<String, String>> _headers() async {
+  Future<Map<String, String>> _headers({String? restaurantId}) async {
     final token = await _storage.loadToken();
     return {
       'Content-Type': 'application/json',
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+      if (restaurantId != null) 'x-restaurant-id': restaurantId,
     };
   }
 
@@ -43,11 +44,11 @@ class HttpApiService {
     }
   }
 
-  Future<Map<String, dynamic>> _getJson(Uri uri) async {
+  Future<Map<String, dynamic>> _getJson(Uri uri, {String? restaurantId}) async {
     try {
-      var res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 12));
+      var res = await http.get(uri, headers: await _headers(restaurantId: restaurantId)).timeout(const Duration(seconds: 12));
       if (res.statusCode == 401 && await _tryRefreshToken()) {
-        res = await http.get(uri, headers: await _headers()).timeout(const Duration(seconds: 12));
+        res = await http.get(uri, headers: await _headers(restaurantId: restaurantId)).timeout(const Duration(seconds: 12));
       }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode >= 400) throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
@@ -57,12 +58,12 @@ class HttpApiService {
     }
   }
 
-  Future<Map<String, dynamic>> _postJson(String path, Map<String, dynamic> body) async {
+  Future<Map<String, dynamic>> _postJson(String path, Map<String, dynamic> body, {String? restaurantId}) async {
     final uri = _u(path);
     try {
-      var res = await http.post(uri, headers: await _headers(), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      var res = await http.post(uri, headers: await _headers(restaurantId: restaurantId), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
       if (res.statusCode == 401 && await _tryRefreshToken()) {
-        res = await http.post(uri, headers: await _headers(), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+        res = await http.post(uri, headers: await _headers(restaurantId: restaurantId), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
       }
       final data = jsonDecode(res.body) as Map<String, dynamic>;
       if (res.statusCode >= 400) throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
@@ -98,13 +99,7 @@ class HttpApiService {
       final refresh = data['refreshToken'] as String?;
       if (token != null) await _storage.saveToken(token);
       if (refresh != null) await _storage.saveRefreshToken(refresh);
-      final userMap = Map<String, dynamic>.from(data['user'] as Map);
-      return UserAccount(
-        username: userMap['username'] as String,
-        password: '',
-        displayName: userMap['displayName'] as String,
-        systemRole: data['user']['systemRole'] ?? 'user',
-      );
+      return UserAccount.fromMap(Map<String, dynamic>.from(data['user'] as Map));
     } catch (_) {
       return null;
     }
@@ -178,21 +173,52 @@ class HttpApiService {
         .toList();
   }
 
-  Future<void> addBill({required String restaurantName, required String tableName, required int total, required int itemCount}) async {
-    await _postJson('/bills', {'restaurantName': restaurantName, 'tableName': tableName, 'total': total, 'itemCount': itemCount});
+  Future<void> addBill({required String restaurantName, required String tableName, required int total, required int itemCount, String? restaurantId}) async {
+    await _postJson('/bills', {'restaurantName': restaurantName, 'tableName': tableName, 'total': total, 'itemCount': itemCount}, restaurantId: restaurantId);
   }
 
-  Future<List<BillRecord>> getBills(String restaurantName) async {
-    final data = await _getJson(_u('/bills', {'restaurantName': restaurantName}));
+  Future<List<BillRecord>> getBills(String restaurantName, {String? restaurantId}) async {
+    final data = await _getJson(_u('/bills', {'restaurantName': restaurantName}), restaurantId: restaurantId);
     return (data['bills'] as List<dynamic>)
         .map((e) => Map<String, dynamic>.from(e as Map))
         .map((m) => BillRecord(id: int.parse(m['id'].toString()), tableName: m['tableName'] as String, total: (m['total'] as num).toInt(), itemCount: (m['itemCount'] as num).toInt(), createdAt: DateTime.parse(m['createdAt'] as String)))
         .toList();
   }
 
-  Future<TodayStats> getTodayStats(String restaurantName) async {
-    final data = await _getJson(_u('/stats/today', {'restaurantName': restaurantName}));
+  Future<TodayStats> getTodayStats(String restaurantName, {String? restaurantId}) async {
+    final data = await _getJson(_u('/stats/today', {'restaurantName': restaurantName}), restaurantId: restaurantId);
     return TodayStats(billCount: (data['billCount'] as num).toInt(), revenue: (data['revenue'] as num).toInt());
+  }
+
+  Future<List<UserAccount>> getStaff(String restaurantId) async {
+    final data = await _getJson(_u('/restaurants/staff', {'restaurantId': restaurantId}), restaurantId: restaurantId);
+    return (data['staff'] as List<dynamic>)
+        .map((e) => UserAccount.fromMap(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<void> updateStaffRole(String restaurantId, String userId, AccountRole role) async {
+    await _postJson('/restaurants/staff/update-role', {
+      'restaurantId': restaurantId,
+      'userId': userId,
+      'role': role.name,
+    }, restaurantId: restaurantId);
+  }
+
+  Future<void> removeStaff(String restaurantId, String userId) async {
+    final uri = _u('/restaurants/staff', {'restaurantId': restaurantId, 'userId': userId});
+    try {
+      var res = await http.delete(uri, headers: await _headers(restaurantId: restaurantId)).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.delete(uri, headers: await _headers(restaurantId: restaurantId)).timeout(const Duration(seconds: 12));
+      }
+      if (res.statusCode >= 400) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('DELETE $uri thất bại: $e');
+    }
   }
 
   Future<void> logout() async {
