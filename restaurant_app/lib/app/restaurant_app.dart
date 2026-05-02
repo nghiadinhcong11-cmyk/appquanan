@@ -175,14 +175,17 @@ class _RestaurantAppState extends State<RestaurantApp> {
       home = AuthScreen(onLogin: _login, onRegister: _register);
     } else {
       // 1. Tìm đơn đăng ký chủ quán của tôi
+      final myOwnerApps = _data.ownerApplications
+          .where((app) => app.username.trim().toLowerCase() == user.username.trim().toLowerCase())
+          .toList();
       OwnerApplication? myOwnerApp;
-      try {
-        myOwnerApp = _data.ownerApplications.firstWhere(
-          (app) => app.username.trim().toLowerCase() == user.username.trim().toLowerCase()
-        );
-      } catch (_) {
-        myOwnerApp = null;
+      for (final app in myOwnerApps) {
+        if (app.status == RequestStatus.approved) {
+          myOwnerApp = app;
+          break;
+        }
       }
+      myOwnerApp ??= myOwnerApps.isNotEmpty ? myOwnerApps.first : null;
 
       // 2. Tìm vai trò nhân viên của tôi
       RoleAssignment? myRole;
@@ -212,11 +215,13 @@ class _RestaurantAppState extends State<RestaurantApp> {
         activeRoleLabel = 'Chủ quán';
         // Lấy ID từ roleAssignments hoặc một nguồn khác.
         // May mắn là roleAssignments chứa cả ID.
-        try {
-          activeRestaurantId = _data.roleAssignments.firstWhere(
-            (ra) => ra.restaurantName.toLowerCase() == activeRestaurant.toLowerCase()
-          ).restaurantId;
-        } catch (_) {}
+        final ownerRa = _data.roleAssignments.where((ra) =>
+            ra.username.toLowerCase() == user.username.toLowerCase() &&
+            ra.restaurantName.toLowerCase() == activeRestaurant.toLowerCase() &&
+            ra.role == AccountRole.owner);
+        if (ownerRa.isNotEmpty) {
+          activeRestaurantId = ownerRa.first.restaurantId;
+        }
       } else if (myRole != null) {
         effectiveRole = myRole.role;
         activeRestaurant = myRole.restaurantName;
@@ -233,6 +238,7 @@ class _RestaurantAppState extends State<RestaurantApp> {
       // TẠO ĐỐI TƯỢNG USER MỚI CÓ KÈM VAI TRÒ ĐỂ GATING UI
       final userWithRole = UserAccount(
         username: user.username,
+        email: user.email,
         password: user.password,
         displayName: user.displayName,
         systemRole: user.systemRole,

@@ -8,6 +8,7 @@ class UserAccount {
   const UserAccount({
     this.id,
     required this.username,
+    this.email,
     required this.password,
     required this.displayName,
     this.systemRole = 'user',
@@ -16,6 +17,7 @@ class UserAccount {
 
   final String? id;
   final String username;
+  final String? email;
   final String password;
   final String displayName;
   final String systemRole;
@@ -48,6 +50,7 @@ class UserAccount {
   Map<String, dynamic> toMap() => {
         'id': id,
         'username': username,
+        'email': email,
         'password': password,
         'displayName': displayName,
         'systemRole': systemRole,
@@ -57,6 +60,7 @@ class UserAccount {
   static UserAccount fromMap(Map<String, dynamic> map) => UserAccount(
         id: map['id']?.toString(),
         username: map['username'] as String,
+        email: map['email'] as String?,
         password: map['password'] as String? ?? '',
         displayName: map['displayName'] as String,
         systemRole: map['systemRole'] as String? ?? 'user',

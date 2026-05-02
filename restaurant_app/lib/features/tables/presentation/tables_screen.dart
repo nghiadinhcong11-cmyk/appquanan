@@ -25,6 +25,8 @@ class TablesScreen extends StatefulWidget {
 
 class _TablesScreenState extends State<TablesScreen> {
   final TextEditingController _searchController = TextEditingController();
+  String? _selectedRestaurantId;
+  String _selectedRestaurantName = '';
   List<DiningTable> _tables = [];
   bool _isLoading = true;
   String _selectedFloor = 'all';
@@ -32,6 +34,8 @@ class _TablesScreenState extends State<TablesScreen> {
   @override
   void initState() {
     super.initState();
+    _selectedRestaurantId = widget.restaurantId.isNotEmpty ? widget.restaurantId : null;
+    _selectedRestaurantName = widget.restaurantName;
     _loadTables();
   }
 
@@ -41,12 +45,13 @@ class _TablesScreenState extends State<TablesScreen> {
 
   Future<void> _saveLocalDrafts() async {
     final drafts = _tables.where((t) => t.isTemporary).toList();
-    if (drafts.isEmpty || widget.restaurantId.isEmpty) return;
+    final restaurantId = _selectedRestaurantId ?? widget.restaurantId;
+    if (drafts.isEmpty || restaurantId.isEmpty) return;
     setState(() => _isLoading = true);
     try {
       for (final t in drafts) {
         await widget.api.addTable(
-          restaurantId: widget.restaurantId,
+          restaurantId: restaurantId,
           tableName: t.name,
           floor: t.floor,
           isTemporary: false,
@@ -65,13 +70,14 @@ class _TablesScreenState extends State<TablesScreen> {
   }
 
   Future<void> _loadTables() async {
-    if (widget.restaurantId.isEmpty) {
+    final restaurantId = _selectedRestaurantId ?? widget.restaurantId;
+    if (restaurantId.isEmpty) {
       setState(() => _isLoading = false);
       return;
     }
     setState(() => _isLoading = true);
     try {
-      final list = await widget.api.getTables(widget.restaurantId);
+      final list = await widget.api.getTables(restaurantId);
       setState(() {
         _tables = list;
         _isLoading = false;
@@ -83,7 +89,8 @@ class _TablesScreenState extends State<TablesScreen> {
   }
 
   Future<void> _openAddTableSheet() async {
-    if (widget.restaurantId.isEmpty) {
+    final restaurantId = _selectedRestaurantId ?? widget.restaurantId;
+    if (restaurantId.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Vui lòng chọn cơ sở')),
       );
@@ -154,7 +161,7 @@ class _TablesScreenState extends State<TablesScreen> {
                       final floor = int.tryParse(floorController.text.trim()) ?? 1;
                       if (name.isEmpty) return;
                       await widget.api.addTable(
-                        restaurantId: widget.restaurantId,
+                        restaurantId: restaurantId,
                         tableName: name,
                         floor: floor,
                         isTemporary: false,
@@ -170,6 +177,32 @@ class _TablesScreenState extends State<TablesScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Future<void> _pickRestaurant() async {
+    final list = await widget.api.getPublicRestaurants(search: '');
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      builder: (ctx) => ListView.builder(
+        itemCount: list.length,
+        itemBuilder: (_, i) {
+          final r = list[i];
+          return ListTile(
+            title: Text((r['name'] ?? '').toString()),
+            subtitle: Text('ID: ${(r['id'] ?? '').toString()}'),
+            onTap: () {
+              setState(() {
+                _selectedRestaurantId = (r['id'] ?? '').toString();
+                _selectedRestaurantName = (r['name'] ?? '').toString();
+              });
+              Navigator.pop(ctx);
+              _loadTables();
+            },
+          );
+        },
       ),
     );
   }
@@ -217,6 +250,23 @@ class _TablesScreenState extends State<TablesScreen> {
             padding: const EdgeInsets.all(12),
             child: Column(
               children: [
+                if ((_selectedRestaurantId ?? widget.restaurantId).isEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: _pickRestaurant,
+                      icon: const Icon(Icons.storefront),
+                      label: const Text('Chọn cơ sở để quản lý bàn'),
+                    ),
+                  )
+                else
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      'Cơ sở: ${_selectedRestaurantName.isEmpty ? widget.restaurantName : _selectedRestaurantName}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
                 TextField(
                   controller: _searchController,
                   onChanged: (_) => setState(() {}),
@@ -294,7 +344,7 @@ class _TablesScreenState extends State<TablesScreen> {
                                       tableId: table.id,
                                       api: widget.api,
                                       restaurantName: widget.restaurantName,
-                                      restaurantId: widget.restaurantId,
+                                      restaurantId: _selectedRestaurantId ?? widget.restaurantId,
                                       user: widget.user,
                                     ),
                                   ),

@@ -526,4 +526,54 @@ class HttpApiService {
     }
     await _storage.clearSession();
   }
+
+  Future<List<UserAccount>> getAllUsers() async {
+    final data = await _getJson(_u('/users'));
+    return (data['users'] as List<dynamic>)
+        .map((e) => UserAccount.fromMap(Map<String, dynamic>.from(e as Map)))
+        .toList();
+  }
+
+  Future<UserAccount> updateMyProfile({String? displayName, String? password}) async {
+    final body = <String, dynamic>{};
+    if (displayName != null && displayName.isNotEmpty) body['displayName'] = displayName;
+    if (password != null && password.isNotEmpty) body['password'] = password;
+    final data = await _patchJson('/users/me', body);
+    return UserAccount.fromMap(Map<String, dynamic>.from(data['user'] as Map));
+  }
+
+  Future<void> deleteMyAccount() async {
+    await _delete('/users/me');
+    await _storage.clearSession();
+  }
+
+  Future<void> adminUpdateUser({
+    required String userId,
+    String? displayName,
+    String? systemRole,
+  }) async {
+    final body = <String, dynamic>{};
+    if (displayName != null && displayName.isNotEmpty) body['displayName'] = displayName;
+    if (systemRole != null && systemRole.isNotEmpty) body['systemRole'] = systemRole;
+    await _patchJson('/users/$userId', body);
+  }
+
+  Future<void> adminDeleteUser(String userId) async {
+    await _delete('/users/$userId');
+  }
+
+  Future<Map<String, dynamic>> _patchJson(String path, Map<String, dynamic> body, {String? restaurantId}) async {
+    final uri = _u(path);
+    try {
+      var res = await http.patch(uri, headers: await _headers(restaurantId: restaurantId), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.patch(uri, headers: await _headers(restaurantId: restaurantId), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      }
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode >= 400) throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
+      return data;
+    } catch (e) {
+      throw Exception('PATCH $uri thất bại: $e');
+    }
+  }
 }

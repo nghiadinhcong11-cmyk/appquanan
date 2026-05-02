@@ -12,7 +12,7 @@ router.get('/health', (_req, res) => res.json({ ok: true }));
 
 router.get('/bootstrap', async (_req, res) => {
   try {
-    const accounts = await pool.query('SELECT id::text, username, display_name, system_role FROM users ORDER BY created_at DESC');
+    const accounts = await pool.query('SELECT id::text, username, email, display_name, system_role FROM users ORDER BY created_at DESC');
     const ownerApplications = await pool.query(`
       SELECT oa.id::text id, u.username, oa.restaurant_name, oa.proof, oa.status
       FROM owner_applications oa JOIN users u ON u.id = oa.user_id
@@ -33,6 +33,7 @@ router.get('/bootstrap', async (_req, res) => {
       accounts: accounts.rows.map(a => ({
         id: a.id,
         username: a.username,
+        email: a.email || a.username,
         password: '',
         displayName: a.display_name,
         systemRole: a.system_role
@@ -41,7 +42,7 @@ router.get('/bootstrap', async (_req, res) => {
       staffRoleRequests: staffRoleRequests.rows.map(r => ({ id: r.id, username: r.username, restaurantName: r.restaurant_name, requestedRole: r.requested_role, note: r.note, status: r.status })),
       roleAssignments: roleAssignments.rows.map(r => ({
         username: r.username,
-        restaurantId: r.restaurantId,
+        restaurantId: r.restaurant_id,
         restaurantName: r.restaurant_name,
         role: r.role
       })),
@@ -77,6 +78,117 @@ router.post('/owner-applications/:id/approve', auth, permitSystemRoles(['admin']
        ON CONFLICT (user_id, restaurant_id) DO UPDATE SET role=EXCLUDED.role`,
       [app.user_id, restaurant.id, 'owner']
     );
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.get('/users', auth, permitSystemRoles(['admin']), async (_req, res) => {
+  try {
+    const rows = await pool.query(
+      'SELECT id::text, username, COALESCE(email, username) as email, display_name, system_role, created_at FROM users ORDER BY created_at DESC',
+    );
+    res.json({
+      users: rows.rows.map((u) => ({
+        id: u.id,
+        username: u.username,
+        email: u.email,
+        displayName: u.display_name,
+        systemRole: u.system_role,
+        createdAt: u.created_at,
+      })),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/users/me', auth, async (req, res) => {
+  try {
+    const { displayName, password } = req.body;
+    if (!displayName && !password) return res.status(400).json({ error: 'No changes provided' });
+    const params = [];
+    const sets = [];
+    if (displayName) {
+      params.push(displayName);
+      sets.push(`display_name = $${params.length}`);
+    }
+    if (password) {
+      const bcrypt = require('bcryptjs');
+      const hash = await bcrypt.hash(password, 10);
+      params.push(hash);
+      sets.push(`password_hash = $${params.length}`);
+    }
+    params.push(req.user.sub);
+    const updated = await pool.query(
+      `UPDATE users SET ${sets.join(', ')} WHERE id = $${params.length}
+       RETURNING id::text, username, COALESCE(email, username) as email, display_name, system_role`,
+      params,
+    );
+    res.json({
+      user: {
+        id: updated.rows[0].id,
+        username: updated.rows[0].username,
+        email: updated.rows[0].email,
+        displayName: updated.rows[0].display_name,
+        systemRole: updated.rows[0].system_role,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/users/me', auth, async (req, res) => {
+  try {
+    await pool.query('DELETE FROM users WHERE id = $1', [req.user.sub]);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.patch('/users/:id', auth, permitSystemRoles(['admin']), async (req, res) => {
+  try {
+    const { displayName, systemRole } = req.body;
+    if (!displayName && !systemRole) return res.status(400).json({ error: 'No changes provided' });
+    const params = [];
+    const sets = [];
+    if (displayName) {
+      params.push(displayName);
+      sets.push(`display_name = $${params.length}`);
+    }
+    if (systemRole) {
+      params.push(systemRole);
+      sets.push(`system_role = $${params.length}`);
+    }
+    params.push(req.params.id);
+    const updated = await pool.query(
+      `UPDATE users SET ${sets.join(', ')} WHERE id = $${params.length}
+       RETURNING id::text, username, COALESCE(email, username) as email, display_name, system_role`,
+      params,
+    );
+    if (!updated.rowCount) return res.status(404).json({ error: 'User not found' });
+    res.json({
+      user: {
+        id: updated.rows[0].id,
+        username: updated.rows[0].username,
+        email: updated.rows[0].email,
+        displayName: updated.rows[0].display_name,
+        systemRole: updated.rows[0].system_role,
+      },
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+router.delete('/users/:id', auth, permitSystemRoles(['admin']), async (req, res) => {
+  try {
+    if (String(req.user.sub) === String(req.params.id)) return res.status(400).json({ error: 'Cannot delete yourself here' });
+    const deleted = await pool.query('DELETE FROM users WHERE id = $1', [req.params.id]);
+    if (!deleted.rowCount) return res.status(404).json({ error: 'User not found' });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

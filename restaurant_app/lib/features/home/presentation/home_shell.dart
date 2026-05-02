@@ -7,6 +7,7 @@ import '../../menu/presentation/menu_management_screen.dart';
 import '../../orders/presentation/orders_screen.dart';
 import '../../tables/presentation/tables_screen.dart';
 import '../../staff/presentation/staff_management_screen.dart';
+import '../../staff/presentation/user_management_screen.dart';
 import 'overview_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -163,7 +164,28 @@ class _HomeShellState extends State<HomeShell> {
                 title: const Text('ADMIN: Duyệt chủ quán', style: TextStyle(fontWeight: FontWeight.bold)),
                 onTap: _openAdminApproveSheet,
               ),
+            if (user.isAdmin)
+              ListTile(
+                leading: const Icon(Icons.manage_accounts, color: Colors.orange),
+                title: const Text('ADMIN: Quản lý người dùng', style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => UserManagementScreen(api: widget.api)),
+                  );
+                },
+              ),
             const Divider(),
+            ListTile(
+              leading: const Icon(Icons.person, color: Colors.red),
+              title: const Text('Sửa thông tin tài khoản'),
+              onTap: _openProfileSheet,
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete_forever, color: Colors.red),
+              title: const Text('Hủy tài khoản', style: TextStyle(color: Colors.red)),
+              onTap: _confirmDeleteAccount,
+            ),
             ListTile(
               leading: const Icon(Icons.storefront, color: Colors.red),
               title: Text(ownerStatus == null ? 'Đăng ký làm chủ quán' : 'Hồ sơ chủ quán: ${_statusLabel(ownerStatus)}'),
@@ -263,6 +285,57 @@ class _HomeShellState extends State<HomeShell> {
         ),
       ),
     );
+  }
+
+  Future<void> _openProfileSheet() async {
+    final nameCtl = TextEditingController(text: widget.user.displayName);
+    final passCtl = TextEditingController();
+    await showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Cập nhật tài khoản', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            TextField(controller: nameCtl, decoration: const InputDecoration(labelText: 'Tên hiển thị')),
+            const SizedBox(height: 12),
+            TextField(controller: passCtl, decoration: const InputDecoration(labelText: 'Mật khẩu mới (không bắt buộc)'), obscureText: true),
+            const SizedBox(height: 12),
+            FilledButton(
+              onPressed: () async {
+                await widget.api.updateMyProfile(displayName: nameCtl.text.trim(), password: passCtl.text.trim().isEmpty ? null : passCtl.text.trim());
+                if (!mounted) return;
+                Navigator.pop(context);
+                ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Đã cập nhật tài khoản. Vui lòng đăng nhập lại.')));
+                await widget.onLogout();
+              },
+              child: const Text('Lưu thay đổi'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmDeleteAccount() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hủy tài khoản'),
+        content: const Text('Bạn chắc chắn muốn xóa tài khoản này? Hành động không thể hoàn tác.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Hủy')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Xóa')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    await widget.api.deleteMyAccount();
+    if (!mounted) return;
+    await widget.onLogout();
   }
 
   Future<void> _openStaffRequestForm() async {
