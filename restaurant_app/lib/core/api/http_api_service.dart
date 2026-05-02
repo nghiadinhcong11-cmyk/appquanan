@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../shared/models/auth_models.dart';
 import '../../shared/models/business_models.dart';
+import '../../shared/models/domain_models.dart';
 import '../storage/auth_storage.dart';
 
 class HttpApiService {
@@ -70,6 +71,37 @@ class HttpApiService {
       return data;
     } catch (e) {
       throw Exception('POST $uri thất bại: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> _putJson(String path, Map<String, dynamic> body, {String? restaurantId}) async {
+    final uri = _u(path);
+    try {
+      var res = await http.put(uri, headers: await _headers(restaurantId: restaurantId), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.put(uri, headers: await _headers(restaurantId: restaurantId), body: jsonEncode(body)).timeout(const Duration(seconds: 12));
+      }
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      if (res.statusCode >= 400) throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
+      return data;
+    } catch (e) {
+      throw Exception('PUT $uri thất bại: $e');
+    }
+  }
+
+  Future<void> _delete(String path, {String? restaurantId}) async {
+    final uri = _u(path);
+    try {
+      var res = await http.delete(uri, headers: await _headers(restaurantId: restaurantId)).timeout(const Duration(seconds: 12));
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.delete(uri, headers: await _headers(restaurantId: restaurantId)).timeout(const Duration(seconds: 12));
+      }
+      if (res.statusCode >= 400) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('DELETE $uri thất bại: $e');
     }
   }
 
@@ -172,6 +204,97 @@ class HttpApiService {
         .toList();
   }
 
+  Future<List<Map<String, dynamic>>> getPublicRestaurants({String search = ''}) async {
+    final data = await _getJson(_u('/public/restaurants', {'search': search}));
+    return (data['restaurants'] as List<dynamic>).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+  }
+
+  Future<List<MenuItemRecord>> getPublicMenuItems({required String restaurantId, String keyword = ''}) async {
+    final data = await _getJson(_u('/public/menu', {
+      'restaurantId': restaurantId,
+      if (keyword.isNotEmpty) 'keyword': keyword,
+    }));
+    return (data['items'] as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((m) => MenuItemRecord(
+              id: int.parse(m['id'].toString()),
+              name: m['name'] as String,
+              price: (m['price'] as num).toInt(),
+              description: m['description'] as String? ?? '',
+              imageUrl: m['imageUrl'] as String? ?? '',
+              createdBy: m['createdBy'] as String? ?? 'public',
+            ))
+        .toList();
+  }
+
+  Future<List<MenuItemRecord>> getPrivateMenuItems({required String restaurantId, String keyword = ''}) async {
+    final data = await _getJson(_u('/private/menu', {
+      if (keyword.isNotEmpty) 'keyword': keyword,
+    }), restaurantId: restaurantId);
+    return (data['items'] as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((m) => MenuItemRecord(
+              id: int.parse(m['id'].toString()),
+              name: m['name'] as String,
+              price: (m['price'] as num).toInt(),
+              description: m['description'] as String? ?? '',
+              imageUrl: m['imageUrl'] as String? ?? '',
+              createdBy: m['createdBy'] as String? ?? '',
+            ))
+        .toList();
+  }
+
+  Future<List<MenuItemRecord>> getMenuByContext({
+    required String restaurantId,
+    required UserAccount? user,
+    String keyword = '',
+  }) async {
+    final canUsePrivate = user != null &&
+        (user.canManageInventory || user.isWaiter || user.isKitchen || user.isCashier);
+    if (!canUsePrivate) {
+      return getPublicMenuItems(restaurantId: restaurantId, keyword: keyword);
+    }
+    return getPrivateMenuItems(restaurantId: restaurantId, keyword: keyword);
+  }
+
+  Future<void> createPrivateMenuItem({
+    required String restaurantId,
+    required String name,
+    required int price,
+    String description = '',
+    String imageUrl = '',
+  }) async {
+    await _postJson('/private/menu', {
+      'name': name,
+      'price': price,
+      'description': description,
+      'imageUrl': imageUrl,
+    }, restaurantId: restaurantId);
+  }
+
+  Future<void> updatePrivateMenuItem({
+    required String restaurantId,
+    required String menuId,
+    String? name,
+    int? price,
+    String? description,
+    String? imageUrl,
+  }) async {
+    await _putJson('/private/menu/$menuId', {
+      'name': name,
+      'price': price,
+      'description': description,
+      'imageUrl': imageUrl,
+    }, restaurantId: restaurantId);
+  }
+
+  Future<void> deletePrivateMenuItem({
+    required String restaurantId,
+    required String menuId,
+  }) async {
+    await _delete('/private/menu/$menuId', restaurantId: restaurantId);
+  }
+
   Future<void> addBill({
     required String restaurantId,
     required String tableName,
@@ -255,8 +378,55 @@ class HttpApiService {
         .toList();
   }
 
-  Future<void> addTable(String restaurantId, String tableName) async {
-    await _postJson('/restaurants/tables', {'restaurantId': restaurantId, 'name': tableName}, restaurantId: restaurantId);
+  Future<void> addTable({
+    required String restaurantId,
+    required String tableName,
+    int floor = 1,
+    bool isTemporary = false,
+  }) async {
+    await _postJson('/restaurants/tables', {
+      'restaurantId': restaurantId,
+      'name': tableName,
+      'floor': floor,
+      'isTemporary': isTemporary,
+    }, restaurantId: restaurantId);
+  }
+
+  Map<String, dynamic> addMenuToTableCart({
+    required Map<String, dynamic> currentCart,
+    required MenuItemRecord item,
+    int quantity = 1,
+  }) {
+    final items = List<Map<String, dynamic>>.from(
+      (currentCart['items'] as List<dynamic>? ?? const []).map((e) => Map<String, dynamic>.from(e as Map)),
+    );
+
+    final index = items.indexWhere((e) => e['menuId'].toString() == item.id.toString());
+    if (index >= 0) {
+      final old = items[index];
+      final oldQty = (old['quantity'] as num?)?.toInt() ?? 0;
+      items[index] = {
+        ...old,
+        'quantity': oldQty + quantity,
+      };
+    } else {
+      items.add({
+        'menuId': item.id.toString(),
+        'name': item.name,
+        'price': item.price,
+        'quantity': quantity,
+      });
+    }
+
+    final total = items.fold<int>(
+      0,
+      (sum, e) => sum + ((e['price'] as num).toInt() * (e['quantity'] as num).toInt()),
+    );
+    return {
+      ...currentCart,
+      'items': items,
+      'total': total,
+    };
   }
 
   Future<void> updateTableStatus(String restaurantId, String tableId, TableState state) async {

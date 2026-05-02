@@ -46,18 +46,6 @@ function permitRestaurantRoles(allowedRoles = []) {
     const restaurantId = req.headers['x-restaurant-id'] || req.body.restaurantId || req.query.restaurantId;
 
     if (!restaurantId) {
-       // Check if it's a legacy route using restaurantName (we should ideally remove this once migration is complete)
-       if (req.query.restaurantName || req.body.restaurantName) {
-         try {
-           const rName = req.query.restaurantName || req.body.restaurantName;
-           const rQ = await pool.query('SELECT id FROM restaurants WHERE lower(name)=lower($1) LIMIT 1', [rName]);
-           if (rQ.rowCount) {
-             const rId = rQ.rows[0].id;
-             const hasRole = await hasRestaurantRole(pool, req.user.sub, rId, allowedRoles);
-             if (hasRole) return next();
-           }
-         } catch(e) {}
-       }
        return res.status(400).json({ error: 'Missing restaurant context' });
     }
 

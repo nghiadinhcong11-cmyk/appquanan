@@ -351,7 +351,7 @@ router.get('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manager
     const { restaurantId } = req.query;
     if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
     const rows = await pool.query(
-      'SELECT id::text, name, status FROM tables WHERE restaurant_id = $1 ORDER BY name ASC',
+      'SELECT id::text, name, status, COALESCE(floor, 1) as floor, COALESCE(is_temporary, false) as "isTemporary" FROM tables WHERE restaurant_id = $1 ORDER BY floor ASC, name ASC',
       [restaurantId]
     );
     res.json({ tables: rows.rows });
@@ -362,10 +362,10 @@ router.get('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manager
 
 router.post('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
-    const { restaurantId, name } = req.body;
+    const { restaurantId, name, floor, isTemporary } = req.body;
     await pool.query(
-      'INSERT INTO tables(restaurant_id, name) VALUES($1, $2) ON CONFLICT DO NOTHING',
-      [restaurantId, name]
+      'INSERT INTO tables(restaurant_id, name, floor, is_temporary) VALUES($1, $2, $3, $4) ON CONFLICT (restaurant_id, name) DO UPDATE SET floor = EXCLUDED.floor, is_temporary = EXCLUDED.is_temporary',
+      [restaurantId, name, Number.isFinite(Number(floor)) ? Number(floor) : 1, isTemporary || false]
     );
     res.json({ ok: true });
   } catch (e) {

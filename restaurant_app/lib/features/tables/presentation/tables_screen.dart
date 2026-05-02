@@ -1,4 +1,5 @@
 ﻿import 'package:flutter/material.dart';
+
 import '../../../core/api/http_api_service.dart';
 import '../../../shared/models/auth_models.dart';
 import '../../../shared/models/domain_models.dart';
@@ -23,13 +24,44 @@ class TablesScreen extends StatefulWidget {
 }
 
 class _TablesScreenState extends State<TablesScreen> {
+  final TextEditingController _searchController = TextEditingController();
   List<DiningTable> _tables = [];
   bool _isLoading = true;
+  String _selectedFloor = 'all';
 
   @override
   void initState() {
     super.initState();
     _loadTables();
+  }
+
+  int _floorNumber(DiningTable table) => table.floor;
+
+  String _floorLabel(int floor) => 'Tầng $floor';
+
+  Future<void> _saveLocalDrafts() async {
+    final drafts = _tables.where((t) => t.isTemporary).toList();
+    if (drafts.isEmpty || widget.restaurantId.isEmpty) return;
+    setState(() => _isLoading = true);
+    try {
+      for (final t in drafts) {
+        await widget.api.addTable(
+          restaurantId: widget.restaurantId,
+          tableName: t.name,
+          floor: t.floor,
+          isTemporary: false,
+        );
+      }
+      await _loadTables();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Đã lưu ${drafts.length} bàn local lên hệ thống')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi lưu bản nháp: $e')));
+      setState(() => _isLoading = false);
+    }
   }
 
   Future<void> _loadTables() async {
@@ -50,35 +82,96 @@ class _TablesScreenState extends State<TablesScreen> {
     }
   }
 
-  Future<void> _addTable() async {
-    final controller = TextEditingController();
-    final name = await showDialog<String>(
+  Future<void> _openAddTableSheet() async {
+    if (widget.restaurantId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Vui lòng chọn cơ sở')),
+      );
+      return;
+    }
+
+    final nameController = TextEditingController();
+    final floorController = TextEditingController(text: '1');
+
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Thêm bàn mới'),
-        content: TextField(
-          controller: controller,
-          decoration: const InputDecoration(hintText: 'Tên bàn (vd: Bàn 10)'),
-          autofocus: true,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 16,
+          right: 16,
+          top: 16,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Hủy')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-            child: const Text('Thêm'),
-          ),
-        ],
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text('Thêm bàn', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              decoration: const InputDecoration(labelText: 'Tên bàn (vd: Bàn 10)'),
+              autofocus: true,
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: floorController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(labelText: 'Tầng (số)'),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () {
+                      final name = nameController.text.trim();
+                      final floor = int.tryParse(floorController.text.trim()) ?? 1;
+                      if (name.isEmpty) return;
+                      setState(() {
+                        _tables = [
+                          DiningTable(
+                            id: 'temp_${DateTime.now().millisecondsSinceEpoch}',
+                            name: name,
+                            state: TableState.empty,
+                            floor: floor,
+                            isTemporary: true,
+                          ),
+                          ..._tables,
+                        ];
+                      });
+                      Navigator.pop(ctx);
+                    },
+                    child: const Text('Lưu tạm (Local)'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: FilledButton(
+                    onPressed: () async {
+                      final name = nameController.text.trim();
+                      final floor = int.tryParse(floorController.text.trim()) ?? 1;
+                      if (name.isEmpty) return;
+                      await widget.api.addTable(
+                        restaurantId: widget.restaurantId,
+                        tableName: name,
+                        floor: floor,
+                        isTemporary: false,
+                      );
+                      if (!mounted) return;
+                      Navigator.pop(ctx);
+                      await _loadTables();
+                    },
+                    child: const Text('Lưu chính thức'),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
-
-    if (name != null && name.isNotEmpty) {
-      try {
-        await widget.api.addTable(widget.restaurantId, name);
-        _loadTables();
-      } catch (e) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Lỗi: $e')));
-      }
-    }
   }
 
   Color _statusColor(TableState state) {
@@ -105,6 +198,16 @@ class _TablesScreenState extends State<TablesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final keyword = _searchController.text.trim().toLowerCase();
+    final floorSet = _tables.map(_floorNumber).toSet().toList()..sort();
+
+    final filtered = _tables.where((t) {
+      final passKeyword = keyword.isEmpty || t.name.toLowerCase().contains(keyword);
+      final passFloor = _selectedFloor == 'all' || _floorLabel(_floorNumber(t)) == _selectedFloor;
+      return passKeyword && passFloor;
+    }).toList();
+    final draftCount = _tables.where((t) => t.isTemporary).length;
+
     return Scaffold(
       backgroundColor: Colors.grey[100],
       body: Column(
@@ -115,6 +218,8 @@ class _TablesScreenState extends State<TablesScreen> {
             child: Column(
               children: [
                 TextField(
+                  controller: _searchController,
+                  onChanged: (_) => setState(() {}),
                   decoration: InputDecoration(
                     hintText: 'Tìm theo tên bàn',
                     prefixIcon: const Icon(Icons.search),
@@ -131,14 +236,29 @@ class _TablesScreenState extends State<TablesScreen> {
                   scrollDirection: Axis.horizontal,
                   child: Row(
                     children: [
-                      const _Chip(text: 'Tất cả', selected: true),
-                      const _Chip(text: 'Tầng 1'),
-                      const _Chip(text: 'Sân vườn'),
+                      _Chip(
+                        text: 'Tất cả',
+                        selected: _selectedFloor == 'all',
+                        onTap: () => setState(() => _selectedFloor = 'all'),
+                      ),
+                      ...floorSet.map((f) {
+                        final label = _floorLabel(f);
+                        return _Chip(
+                          text: label,
+                          selected: _selectedFloor == label,
+                          onTap: () => setState(() => _selectedFloor = label),
+                        );
+                      }),
                       if (widget.user.canManageInventory)
                         IconButton(
-                          onPressed: _addTable,
+                          onPressed: _openAddTableSheet,
                           icon: const Icon(Icons.add_circle, color: Color(0xFFE30D25)),
                           tooltip: 'Thêm bàn',
+                        ),
+                      if (widget.user.canManageInventory && draftCount > 0)
+                        TextButton(
+                          onPressed: _saveLocalDrafts,
+                          child: Text('Lưu $draftCount bản nháp'),
                         ),
                     ],
                   ),
@@ -151,11 +271,11 @@ class _TablesScreenState extends State<TablesScreen> {
               onRefresh: _loadTables,
               child: _isLoading
                   ? const Center(child: CircularProgressIndicator())
-                  : _tables.isEmpty
+                  : filtered.isEmpty
                       ? const Center(child: Text('Chưa có bàn nào. Nhấn + để thêm.'))
                       : GridView.builder(
                           padding: const EdgeInsets.all(12),
-                          itemCount: _tables.length,
+                          itemCount: filtered.length,
                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                             crossAxisCount: 3,
                             mainAxisSpacing: 12,
@@ -163,7 +283,7 @@ class _TablesScreenState extends State<TablesScreen> {
                             childAspectRatio: 0.95,
                           ),
                           itemBuilder: (context, index) {
-                            final table = _tables[index];
+                            final table = filtered[index];
                             return InkWell(
                               onTap: () async {
                                 await Navigator.push(
@@ -179,7 +299,7 @@ class _TablesScreenState extends State<TablesScreen> {
                                     ),
                                   ),
                                 );
-                                _loadTables(); // Refresh khi quay lại
+                                _loadTables();
                               },
                               child: Container(
                                 decoration: BoxDecoration(
@@ -187,7 +307,7 @@ class _TablesScreenState extends State<TablesScreen> {
                                   borderRadius: BorderRadius.circular(10),
                                   boxShadow: [
                                     BoxShadow(
-                                      color: Colors.black.withOpacity(0.05),
+                                      color: Colors.black.withValues(alpha: 0.05),
                                       blurRadius: 4,
                                       offset: const Offset(0, 2),
                                     ),
@@ -222,6 +342,14 @@ class _TablesScreenState extends State<TablesScreen> {
                                         color: table.state == TableState.empty ? Colors.black54 : Colors.white,
                                       ),
                                     ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      table.isTemporary ? 'Local draft' : _floorLabel(_floorNumber(table)),
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: table.state == TableState.empty ? Colors.black54 : Colors.white,
+                                      ),
+                                    ),
                                     const Spacer(),
                                   ],
                                 ),
@@ -238,26 +366,30 @@ class _TablesScreenState extends State<TablesScreen> {
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({required this.text, this.selected = false});
+  const _Chip({required this.text, this.selected = false, this.onTap});
 
   final String text;
   final bool selected;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: selected ? const Color(0xFFE30D25) : Colors.white,
-        border: Border.all(color: const Color(0xFFE30D25)),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: selected ? Colors.white : const Color(0xFFE30D25),
-          fontSize: 12,
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.only(right: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFE30D25) : Colors.white,
+          border: Border.all(color: const Color(0xFFE30D25)),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(
+          text,
+          style: TextStyle(
+            color: selected ? Colors.white : const Color(0xFFE30D25),
+            fontSize: 12,
+          ),
         ),
       ),
     );

@@ -1,48 +1,122 @@
 ﻿import 'package:flutter/material.dart';
 
 import '../../../core/api/http_api_service.dart';
+import '../../../shared/models/auth_models.dart';
 import '../../../shared/models/business_models.dart';
-import '../../../shared/store/restaurant_store.dart';
 
 class MenuManagementScreen extends StatefulWidget {
-  const MenuManagementScreen({super.key, required this.api, required this.restaurantName, required this.restaurantId, required this.username});
+  const MenuManagementScreen({
+    super.key,
+    required this.api,
+    required this.restaurantName,
+    required this.restaurantId,
+    required this.user,
+  });
 
   final HttpApiService api;
   final String restaurantName;
   final String restaurantId;
-  final String username;
+  final UserAccount user;
 
   @override
   State<MenuManagementScreen> createState() => _MenuManagementScreenState();
 }
 
 class _MenuManagementScreenState extends State<MenuManagementScreen> {
-  late Future<List<MenuItemRecord>> _future;
+  final _keywordController = TextEditingController();
+  final _searchRestaurantController = TextEditingController();
+
+  List<Map<String, dynamic>> _restaurants = const [];
+  List<MenuItemRecord> _menu = const [];
+  bool _loadingRestaurants = false;
+  bool _loadingMenu = false;
+  String? _error;
+
+  String? _selectedRestaurantId;
+  String _selectedRestaurantName = '';
+
+  bool get _canManageMenu => widget.user.canManageInventory;
+
+  String? get _effectiveRestaurantId {
+    if (widget.restaurantId.isNotEmpty) return widget.restaurantId;
+    return _selectedRestaurantId;
+  }
 
   @override
   void initState() {
     super.initState();
-    _future = widget.api.getMenuItems(restaurantId: widget.restaurantId);
+    _selectedRestaurantId = widget.restaurantId.isNotEmpty ? widget.restaurantId : null;
+    _selectedRestaurantName = widget.restaurantName;
+    _loadInitial();
   }
 
-  Future<void> _reload() async {
+  Future<void> _loadInitial() async {
+    if (_effectiveRestaurantId == null || _effectiveRestaurantId!.isEmpty) {
+      await _loadRestaurants();
+      return;
+    }
+    await _loadMenu();
+  }
+
+  Future<void> _loadRestaurants() async {
     setState(() {
-      _future = widget.api.getMenuItems(restaurantId: widget.restaurantId);
+      _loadingRestaurants = true;
+      _error = null;
     });
+    try {
+      final data = await widget.api.getPublicRestaurants(search: _searchRestaurantController.text.trim());
+      setState(() => _restaurants = data);
+    } catch (e) {
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loadingRestaurants = false);
+    }
+  }
+
+  Future<void> _loadMenu() async {
+    final restaurantId = _effectiveRestaurantId;
+    if (restaurantId == null || restaurantId.isEmpty) {
+      setState(() => _error = 'Vui lòng chọn cơ sở');
+      return;
+    }
+
+    setState(() {
+      _loadingMenu = true;
+      _error = null;
+    });
+
+    try {
+      final items = await widget.api.getMenuByContext(
+        restaurantId: restaurantId,
+        user: widget.user,
+        keyword: _keywordController.text.trim(),
+      );
+      setState(() => _menu = items);
+    } catch (e) {
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loadingMenu = false);
+    }
   }
 
   String _formatMoney(int value) => '${value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} đ';
 
-  Future<void> _openAddMenuDialog(BuildContext context) async {
-    final nameController = TextEditingController();
-    final priceController = TextEditingController();
-    final descController = TextEditingController();
-    final imageController = TextEditingController();
+  Future<void> _openAddOrEditDialog({MenuItemRecord? editItem}) async {
+    final nameController = TextEditingController(text: editItem?.name ?? '');
+    final priceController = TextEditingController(text: editItem?.price.toString() ?? '');
+    final descController = TextEditingController(text: editItem?.description ?? '');
+    final imageController = TextEditingController(text: editItem?.imageUrl ?? '');
+
+    final restaurantId = _effectiveRestaurantId;
+    if (restaurantId == null || restaurantId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Vui lòng chọn cơ sở')));
+      return;
+    }
 
     await showDialog<void>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('Thêm món vào menu'),
+        title: Text(editItem == null ? 'Thêm món vào menu' : 'Sửa món'),
         content: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -51,9 +125,9 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
               const SizedBox(height: 12),
               TextField(controller: priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Giá bán')),
               const SizedBox(height: 12),
-              TextField(controller: descController, decoration: const InputDecoration(labelText: 'Mô tả (không bắt buộc)')),
+              TextField(controller: descController, decoration: const InputDecoration(labelText: 'Mô tả')),
               const SizedBox(height: 12),
-              TextField(controller: imageController, decoration: const InputDecoration(labelText: 'Link hình ảnh (không bắt buộc)')),
+              TextField(controller: imageController, decoration: const InputDecoration(labelText: 'Link hình ảnh')),
             ],
           ),
         ),
@@ -64,16 +138,29 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
               final name = nameController.text.trim();
               final price = int.tryParse(priceController.text.trim());
               if (name.isEmpty || price == null || price <= 0) return;
-              await widget.api.addMenuItem(
-                restaurantId: widget.restaurantId,
-                name: name,
-                price: price,
-                description: descController.text.trim(),
-                imageUrl: imageController.text.trim(),
-              );
+
+              if (editItem == null) {
+                await widget.api.createPrivateMenuItem(
+                  restaurantId: restaurantId,
+                  name: name,
+                  price: price,
+                  description: descController.text.trim(),
+                  imageUrl: imageController.text.trim(),
+                );
+              } else {
+                await widget.api.updatePrivateMenuItem(
+                  restaurantId: restaurantId,
+                  menuId: editItem.id.toString(),
+                  name: name,
+                  price: price,
+                  description: descController.text.trim(),
+                  imageUrl: imageController.text.trim(),
+                );
+              }
+
               if (!mounted) return;
               Navigator.pop(context);
-              await _reload();
+              await _loadMenu();
             },
             child: const Text('Lưu'),
           ),
@@ -82,53 +169,176 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
     );
   }
 
+  Future<void> _deleteItem(MenuItemRecord item) async {
+    final restaurantId = _effectiveRestaurantId;
+    if (restaurantId == null || restaurantId.isEmpty) return;
+
+    await widget.api.deletePrivateMenuItem(
+      restaurantId: restaurantId,
+      menuId: item.id.toString(),
+    );
+    await _loadMenu();
+  }
+
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<MenuItemRecord>>(
-      future: _future,
-      builder: (context, snapshot) {
-        final menu = snapshot.data ?? const <MenuItemRecord>[];
-        RestaurantStore.instance.menuItems.value = menu.map((e) => MenuItemData(name: e.name, price: e.price)).toList();
-        return Column(
+    final restaurantId = _effectiveRestaurantId;
+    final requireSelectRestaurant = restaurantId == null || restaurantId.isEmpty;
+
+    if (requireSelectRestaurant) {
+      return Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
           children: [
+            const Text('Vui lòng chọn cơ sở', style: TextStyle(fontWeight: FontWeight.w700)),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _searchRestaurantController,
+              decoration: InputDecoration(
+                labelText: 'Tìm nhà hàng',
+                suffixIcon: IconButton(onPressed: _loadRestaurants, icon: const Icon(Icons.search)),
+              ),
+              onSubmitted: (_) => _loadRestaurants(),
+            ),
+            const SizedBox(height: 12),
+            if (_loadingRestaurants) const LinearProgressIndicator(),
+            if (_error != null) Padding(padding: const EdgeInsets.only(top: 8), child: Text(_error!, style: const TextStyle(color: Colors.red))),
+            const SizedBox(height: 8),
             Expanded(
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: menu.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
+              child: ListView.builder(
+                itemCount: _restaurants.length,
                 itemBuilder: (context, index) {
-                  final item = menu[index];
-                  return Card(
-                    child: ListTile(
-                      leading: item.imageUrl.isNotEmpty
-                        ? Image.network(item.imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.fastfood))
-                        : const Icon(Icons.fastfood),
-                      title: Text(item.name),
-                      subtitle: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          if (item.description.isNotEmpty) Text(item.description, style: const TextStyle(fontSize: 12)),
-                          Text('Nhập bởi: ${item.createdBy}', style: const TextStyle(fontSize: 10)),
-                        ],
-                      ),
-                      trailing: Text(_formatMoney(item.price)),
-                    ),
+                  final r = _restaurants[index];
+                  return ListTile(
+                    title: Text((r['name'] ?? '').toString()),
+                    subtitle: Text('ID: ${(r['id'] ?? '').toString()}'),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap: () async {
+                      setState(() {
+                        _selectedRestaurantId = (r['id'] ?? '').toString();
+                        _selectedRestaurantName = (r['name'] ?? '').toString();
+                      });
+                      await _loadMenu();
+                    },
                   );
                 },
               ),
             ),
-            SafeArea(
-              minimum: const EdgeInsets.all(16),
-              child: FilledButton.icon(
-                onPressed: () => _openAddMenuDialog(context),
-                icon: const Icon(Icons.add),
-                label: const Text('Thêm món'),
-              ),
-            ),
           ],
-        );
-      },
+        ),
+      );
+    }
+
+    return Column(
+      children: [
+        Container(
+          color: Colors.white,
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'Cơ sở: ${_selectedRestaurantName.isEmpty ? widget.restaurantName : _selectedRestaurantName}',
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (widget.restaurantId.isEmpty)
+                    TextButton.icon(
+                      onPressed: () {
+                        setState(() {
+                          _selectedRestaurantId = null;
+                          _selectedRestaurantName = '';
+                          _menu = const [];
+                        });
+                        _loadRestaurants();
+                      },
+                      icon: const Icon(Icons.swap_horiz),
+                      label: const Text('Đổi cơ sở'),
+                    ),
+                ],
+              ),
+              TextField(
+                controller: _keywordController,
+                decoration: InputDecoration(
+                  hintText: 'Tìm món theo tên',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: IconButton(onPressed: _loadMenu, icon: const Icon(Icons.send)),
+                ),
+                onSubmitted: (_) => _loadMenu(),
+              ),
+              const SizedBox(height: 6),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  _canManageMenu ? 'Private Menu (có quyền quản lý)' : 'Public Menu (chỉ xem)',
+                  style: TextStyle(
+                    color: _canManageMenu ? Colors.green[700] : Colors.orange[700],
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_loadingMenu) const LinearProgressIndicator(),
+        if (_error != null) Padding(padding: const EdgeInsets.all(12), child: Text(_error!, style: const TextStyle(color: Colors.red))),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(16),
+            itemCount: _menu.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (context, index) {
+              final item = _menu[index];
+              return Card(
+                child: ListTile(
+                  leading: item.imageUrl.isNotEmpty
+                      ? Image.network(item.imageUrl, width: 50, height: 50, fit: BoxFit.cover, errorBuilder: (_, __, ___) => const Icon(Icons.fastfood))
+                      : const Icon(Icons.fastfood),
+                  title: Text(item.name),
+                  subtitle: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (item.description.isNotEmpty) Text(item.description, style: const TextStyle(fontSize: 12)),
+                      Text('Nhập bởi: ${item.createdBy}', style: const TextStyle(fontSize: 10)),
+                    ],
+                  ),
+                  trailing: _canManageMenu
+                      ? PopupMenuButton<String>(
+                          onSelected: (value) async {
+                            if (value == 'edit') {
+                              await _openAddOrEditDialog(editItem: item);
+                            } else if (value == 'delete') {
+                              await _deleteItem(item);
+                            }
+                          },
+                          itemBuilder: (_) => const [
+                            PopupMenuItem(value: 'edit', child: Text('Sửa')),
+                            PopupMenuItem(value: 'delete', child: Text('Xóa')),
+                          ],
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: Text(_formatMoney(item.price)),
+                          ),
+                        )
+                      : Text(_formatMoney(item.price)),
+                ),
+              );
+            },
+          ),
+        ),
+        if (_canManageMenu)
+          SafeArea(
+            minimum: const EdgeInsets.all(16),
+            child: FilledButton.icon(
+              onPressed: _openAddOrEditDialog,
+              icon: const Icon(Icons.add),
+              label: const Text('Thêm món'),
+            ),
+          ),
+      ],
     );
   }
 }
-

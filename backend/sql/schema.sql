@@ -27,6 +27,8 @@ CREATE TABLE IF NOT EXISTS tables (
   id BIGSERIAL PRIMARY KEY,
   restaurant_id BIGINT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
   name VARCHAR(100) NOT NULL,
+  floor INTEGER NOT NULL DEFAULT 1,
+  is_temporary BOOLEAN NOT NULL DEFAULT false,
   status VARCHAR(50) NOT NULL DEFAULT 'empty', -- 'empty', 'serving', 'waiting_payment'
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE(restaurant_id, name)
@@ -107,3 +109,9 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   revoked_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+CREATE INDEX IF NOT EXISTS idx_menus_restaurant_id ON menus(restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_orders_restaurant_created ON orders(restaurant_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_role_assignments_user_restaurant ON role_assignments(user_id, restaurant_id);
+CREATE INDEX IF NOT EXISTS idx_employee_requests_restaurant_status ON employee_requests(restaurant_id, status);
+CREATE INDEX IF NOT EXISTS idx_tables_restaurant_floor ON tables(restaurant_id, floor);

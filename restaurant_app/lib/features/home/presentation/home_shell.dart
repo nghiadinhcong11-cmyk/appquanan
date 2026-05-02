@@ -101,7 +101,18 @@ class _HomeShellState extends State<HomeShell> {
           api: widget.api,
           restaurantName: _activeRestaurant,
           restaurantId: widget.restaurantId,
-          username: widget.user.username,
+          user: widget.user,
+        ),
+        title: 'Menu',
+        nav: const NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
+      ));
+    } else {
+      tabs.add((
+        page: MenuManagementScreen(
+          api: widget.api,
+          restaurantName: _activeRestaurant,
+          restaurantId: widget.restaurantId,
+          user: widget.user,
         ),
         title: 'Menu',
         nav: const NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
@@ -414,4 +425,3 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 }
-

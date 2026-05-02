@@ -4,6 +4,8 @@ const cors = require('cors');
 const { pool } = require('./db');
 const authRoutes = require('./routes/auth.routes');
 const appRoutes = require('./routes/app.routes');
+const publicRoutes = require('./routes/public.routes');
+const privateRoutes = require('./routes/private.routes');
 
 const path = require('path');
 
@@ -13,6 +15,8 @@ app.use(cors());
 app.use(express.json());
 
 app.use('/auth', authRoutes);
+app.use('/public', publicRoutes);
+app.use('/private', privateRoutes);
 app.use('/', appRoutes);
 
 // Serve Flutter Web static files

@@ -1,23 +1,38 @@
-enum TableState { empty, serving, waitingPayment }
+﻿enum TableState { empty, serving, waitingPayment }
 
 class DiningTable {
-  const DiningTable({this.id, required this.name, required this.state, this.guests = 0});
+  const DiningTable({
+    this.id,
+    required this.name,
+    required this.state,
+    this.guests = 0,
+    this.floor = 1,
+    this.isTemporary = false,
+  });
 
   final String? id;
   final String name;
   final TableState state;
   final int guests;
+  final int floor;
+  final bool isTemporary;
 
   static DiningTable fromMap(Map<String, dynamic> map) {
     TableState state = TableState.empty;
     switch (map['status']) {
-      case 'serving': state = TableState.serving; break;
-      case 'waiting_payment': state = TableState.waitingPayment; break;
+      case 'serving':
+        state = TableState.serving;
+        break;
+      case 'waiting_payment':
+        state = TableState.waitingPayment;
+        break;
     }
     return DiningTable(
       id: map['id']?.toString(),
       name: map['name'] as String,
       state: state,
+      floor: (map['floor'] as num?)?.toInt() ?? 1,
+      isTemporary: map['isTemporary'] == true,
     );
   }
 }
