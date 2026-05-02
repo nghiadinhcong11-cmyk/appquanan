@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS users CASCADE;
 CREATE TABLE IF NOT EXISTS users (
   id BIGSERIAL PRIMARY KEY,
   username VARCHAR(255) NOT NULL UNIQUE,
+  email VARCHAR(255) UNIQUE,
   display_name VARCHAR(255) NOT NULL,
   password_hash TEXT NOT NULL,
   system_role VARCHAR(50) NOT NULL DEFAULT 'user',
@@ -115,3 +116,4 @@ CREATE INDEX IF NOT EXISTS idx_orders_restaurant_created ON orders(restaurant_id
 CREATE INDEX IF NOT EXISTS idx_role_assignments_user_restaurant ON role_assignments(user_id, restaurant_id);
 CREATE INDEX IF NOT EXISTS idx_employee_requests_restaurant_status ON employee_requests(restaurant_id, status);
 CREATE INDEX IF NOT EXISTS idx_tables_restaurant_floor ON tables(restaurant_id, floor);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique ON users(lower(email));

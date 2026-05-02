@@ -34,7 +34,11 @@ app.get('*', (req, res, next) => {
 // Global error handler
 app.use((err, _req, res, _next) => {
   console.error('[HTTP] Unhandled route error:', err);
-  res.status(500).json({ error: 'Internal server error' });
+
+  res.status(500).json({
+    error: err.message, // 🔥 hiển thị lỗi thật
+    stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+  });
 });
 
 process.on('unhandledRejection', (reason) => {

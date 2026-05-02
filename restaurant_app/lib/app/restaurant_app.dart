@@ -76,17 +76,17 @@ class _RestaurantAppState extends State<RestaurantApp> {
     });
   }
 
-  Future<String?> _login(String username, String password) async {
-    final user = await _api.login(username, password);
-    if (user == null) return 'Sai tên đăng nhập hoặc mật khẩu';
+  Future<String?> _login(String email, String password) async {
+    final user = await _api.login(email, password);
+    if (user == null) return 'Sai email hoặc mật khẩu';
     await _refreshData();
     if (!mounted) return null;
     setState(() => _currentUser = user);
     return null;
   }
 
-  Future<String?> _register(String displayName, String username, String password) async {
-    final err = await _api.register(displayName, username, password);
+  Future<String?> _register(String displayName, String email, String password) async {
+    final err = await _api.register(displayName, email, password);
     await _refreshData();
     return err;
   }

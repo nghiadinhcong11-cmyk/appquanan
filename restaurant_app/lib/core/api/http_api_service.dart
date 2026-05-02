@@ -123,10 +123,10 @@ class HttpApiService {
     return ApiData(accounts: accounts, ownerApplications: ownerApplications, staffRoleRequests: staffRoleRequests, roleAssignments: roleAssignments);
   }
 
-  Future<UserAccount?> login(String username, String password) async {
+  Future<UserAccount?> login(String email, String password) async {
     try {
-      final data = await _postJson('/auth/login', {'username': username, 'password': password});
-      await _storage.saveSessionUsername(username);
+      final data = await _postJson('/auth/login', {'email': email, 'password': password});
+      await _storage.saveSessionUsername(email);
       final token = data['token'] as String?;
       final refresh = data['refreshToken'] as String?;
       if (token != null) await _storage.saveToken(token);
@@ -137,14 +137,14 @@ class HttpApiService {
     }
   }
 
-  Future<String?> register(String displayName, String username, String password) async {
+  Future<String?> register(String displayName, String email, String password) async {
     try {
-      final data = await _postJson('/auth/register', {'displayName': displayName, 'username': username, 'password': password});
+      final data = await _postJson('/auth/register', {'displayName': displayName, 'email': email, 'password': password});
       final token = data['token'] as String?;
       final refresh = data['refreshToken'] as String?;
       if (token != null) await _storage.saveToken(token);
       if (refresh != null) await _storage.saveRefreshToken(refresh);
-      await _storage.saveSessionUsername(username);
+      await _storage.saveSessionUsername(email);
       return null;
     } catch (e) {
       return e.toString().replaceFirst('Exception: ', '');

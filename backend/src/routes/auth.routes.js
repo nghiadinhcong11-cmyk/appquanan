@@ -44,16 +44,17 @@ router.post('/register', async (req, res) => {
   if (!secrets) return;
 
   try {
-    const { displayName, username, password } = req.body;
-    if (!displayName || !username || !password) return res.status(400).json({ error: 'Missing fields' });
+    const { displayName, username, email, password } = req.body;
+    const normalizedEmail = (email || username || '').trim().toLowerCase();
+    if (!displayName || !normalizedEmail || !password) return res.status(400).json({ error: 'Missing fields' });
 
-    const existed = await pool.query('SELECT id FROM users WHERE username=$1', [username]);
-    if (existed.rowCount) return res.status(409).json({ error: 'Tên đăng nhập đã tồn tại' });
+    const existed = await pool.query('SELECT id FROM users WHERE lower(username)=$1 OR lower(email)=$1', [normalizedEmail]);
+    if (existed.rowCount) return res.status(409).json({ error: 'Email đã tồn tại' });
 
     const passwordHash = await bcrypt.hash(password, 10);
     const inserted = await pool.query(
-      'INSERT INTO users(username, password_hash, display_name) VALUES($1,$2,$3) RETURNING id::text, username, display_name, system_role',
-      [username, passwordHash, displayName]
+      'INSERT INTO users(username, email, password_hash, display_name) VALUES($1,$2,$3,$4) RETURNING id::text, username, email, display_name, system_role',
+      [normalizedEmail, normalizedEmail, passwordHash, displayName]
     );
     const user = inserted.rows[0];
 
@@ -69,6 +70,7 @@ router.post('/register', async (req, res) => {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         displayName: user.display_name,
         systemRole: user.system_role
       },
@@ -86,13 +88,17 @@ router.post('/login', async (req, res) => {
   if (!secrets) return;
 
   try {
-    const { username, password } = req.body;
-    const q = await pool.query('SELECT id::text, username, display_name, password_hash, system_role FROM users WHERE username=$1', [username]);
-    if (!q.rowCount) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
+    const { username, email, password } = req.body;
+    const identity = (email || username || '').trim().toLowerCase();
+    const q = await pool.query(
+      'SELECT id::text, username, email, display_name, password_hash, system_role FROM users WHERE lower(username)=$1 OR lower(email)=$1',
+      [identity],
+    );
+    if (!q.rowCount) return res.status(401).json({ error: 'Sai email hoặc mật khẩu' });
 
     const user = q.rows[0];
     const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
+    if (!ok) return res.status(401).json({ error: 'Sai email hoặc mật khẩu' });
 
     const accessToken = signAccess(user, secrets.jwtSecret);
     const refreshToken = signRefresh(user, secrets.refreshSecret);
@@ -106,6 +112,7 @@ router.post('/login', async (req, res) => {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         displayName: user.display_name,
         systemRole: user.system_role
       },
@@ -135,7 +142,7 @@ router.post('/refresh', async (req, res) => {
     );
     if (!tokenRow.rowCount) return res.status(401).json({ error: 'Invalid refresh token' });
 
-    const userQ = await pool.query('SELECT id::text, username, display_name, system_role FROM users WHERE id=$1', [payload.sub]);
+    const userQ = await pool.query('SELECT id::text, username, email, display_name, system_role FROM users WHERE id=$1', [payload.sub]);
     if (!userQ.rowCount) return res.status(401).json({ error: 'User not found' });
 
     const user = userQ.rows[0];
@@ -145,6 +152,7 @@ router.post('/refresh', async (req, res) => {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         displayName: user.display_name,
         systemRole: user.system_role
       }
@@ -157,7 +165,7 @@ router.post('/refresh', async (req, res) => {
 router.get('/me', auth, async (req, res) => {
   try {
     const q = await pool.query(
-      'SELECT id::text, username, display_name as "displayName", system_role as "systemRole" FROM users WHERE id=$1',
+      'SELECT id::text, username, email, display_name as "displayName", system_role as "systemRole" FROM users WHERE id=$1',
       [req.user.sub]
     );
     if (!q.rowCount) return res.status(404).json({ error: 'User not found' });
