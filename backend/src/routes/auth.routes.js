@@ -52,7 +52,7 @@ router.post('/register', async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
     const inserted = await pool.query(
-      'INSERT INTO users(username, password_hash, display_name) VALUES($1,$2,$3) RETURNING id, username, display_name, system_role',
+      'INSERT INTO users(username, password_hash, display_name) VALUES($1,$2,$3) RETURNING id::text, username, display_name, system_role',
       [username, passwordHash, displayName]
     );
     const user = inserted.rows[0];
@@ -87,7 +87,7 @@ router.post('/login', async (req, res) => {
 
   try {
     const { username, password } = req.body;
-    const q = await pool.query('SELECT id, username, display_name, password_hash, system_role FROM users WHERE username=$1', [username]);
+    const q = await pool.query('SELECT id::text, username, display_name, password_hash, system_role FROM users WHERE username=$1', [username]);
     if (!q.rowCount) return res.status(401).json({ error: 'Sai tên đăng nhập hoặc mật khẩu' });
 
     const user = q.rows[0];
@@ -135,14 +135,35 @@ router.post('/refresh', async (req, res) => {
     );
     if (!tokenRow.rowCount) return res.status(401).json({ error: 'Invalid refresh token' });
 
-    const userQ = await pool.query('SELECT id, username, system_role FROM users WHERE id=$1', [payload.sub]);
+    const userQ = await pool.query('SELECT id::text, username, display_name, system_role FROM users WHERE id=$1', [payload.sub]);
     if (!userQ.rowCount) return res.status(401).json({ error: 'User not found' });
 
     const user = userQ.rows[0];
     const accessToken = signAccess(user, secrets.jwtSecret);
-    res.json({ token: accessToken });
+    res.json({
+      token: accessToken,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name,
+        systemRole: user.system_role
+      }
+    });
   } catch (_e) {
     res.status(401).json({ error: 'Invalid refresh token' });
+  }
+});
+
+router.get('/me', auth, async (req, res) => {
+  try {
+    const q = await pool.query(
+      'SELECT id::text, username, display_name as "displayName", system_role as "systemRole" FROM users WHERE id=$1',
+      [req.user.sub]
+    );
+    if (!q.rowCount) return res.status(404).json({ error: 'User not found' });
+    res.json(q.rows[0]);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
   }
 });
 

@@ -141,25 +141,24 @@ class HttpApiService {
   Future<void> approveStaffRequest(String requestId) async => _postJson('/staff-requests/$requestId/approve', {});
 
   Future<void> addMenuItem({
-    required String restaurantName,
+    required String restaurantId,
     required String name,
     required int price,
     String description = '',
     String imageUrl = '',
-    required String createdBy,
   }) async {
     await _postJson('/menu', {
-      'restaurantName': restaurantName,
+      'restaurantId': restaurantId,
       'name': name,
       'price': price,
       'description': description,
       'imageUrl': imageUrl,
-      'createdBy': createdBy
-    });
+    }, restaurantId: restaurantId);
   }
 
-  Future<List<MenuItemRecord>> getMenuItems(String restaurantName) async {
-    final data = await _getJson(_u('/menu', {'restaurantName': restaurantName}));
+  Future<List<MenuItemRecord>> getMenuItems({required String restaurantId}) async {
+    final params = {'restaurantId': restaurantId};
+    final data = await _getJson(_u('/menu', params), restaurantId: restaurantId);
     return (data['items'] as List<dynamic>)
         .map((e) => Map<String, dynamic>.from(e as Map))
         .map((m) => MenuItemRecord(
@@ -173,21 +172,48 @@ class HttpApiService {
         .toList();
   }
 
-  Future<void> addBill({required String restaurantName, required String tableName, required int total, required int itemCount, String? restaurantId}) async {
-    await _postJson('/bills', {'restaurantName': restaurantName, 'tableName': tableName, 'total': total, 'itemCount': itemCount}, restaurantId: restaurantId);
+  Future<void> addBill({
+    required String restaurantId,
+    required String tableName,
+    required int total,
+    required int itemCount,
+    String? tableId,
+  }) async {
+    await _postJson('/bills', {
+      'restaurantId': restaurantId,
+      'tableName': tableName,
+      'total': total,
+      'itemCount': itemCount,
+      'tableId': tableId,
+    }, restaurantId: restaurantId);
   }
 
-  Future<List<BillRecord>> getBills(String restaurantName, {String? restaurantId}) async {
-    final data = await _getJson(_u('/bills', {'restaurantName': restaurantName}), restaurantId: restaurantId);
+  Future<List<BillRecord>> getBills({required String restaurantId}) async {
+    final data = await _getJson(_u('/bills', {'restaurantId': restaurantId}), restaurantId: restaurantId);
     return (data['bills'] as List<dynamic>)
         .map((e) => Map<String, dynamic>.from(e as Map))
         .map((m) => BillRecord(id: int.parse(m['id'].toString()), tableName: m['tableName'] as String, total: (m['total'] as num).toInt(), itemCount: (m['itemCount'] as num).toInt(), createdAt: DateTime.parse(m['createdAt'] as String)))
         .toList();
   }
 
-  Future<TodayStats> getTodayStats(String restaurantName, {String? restaurantId}) async {
-    final data = await _getJson(_u('/stats/today', {'restaurantName': restaurantName}), restaurantId: restaurantId);
-    return TodayStats(billCount: (data['billCount'] as num).toInt(), revenue: (data['revenue'] as num).toInt());
+  Future<TodayStats> getTodayStats({required String restaurantId}) async {
+    final data = await _getJson(_u('/stats/today', {'restaurantId': restaurantId}), restaurantId: restaurantId);
+    return TodayStats(
+      billCount: (data['billCount'] as num).toInt(),
+      revenue: (data['revenue'] as num).toInt(),
+      hourlyRevenue: (data['hourlyRevenue'] as List? ?? [])
+          .map((e) => HourlyRevenue(
+                hour: (e['hour'] as num).toInt(),
+                total: (e['total'] as num).toInt(),
+              ))
+          .toList(),
+      popularItems: (data['popularItems'] as List? ?? [])
+          .map((e) => PopularItem(
+                name: e['name'] as String,
+                quantity: (e['quantity'] as num).toInt(),
+              ))
+          .toList(),
+    );
   }
 
   Future<List<UserAccount>> getStaff(String restaurantId) async {
@@ -218,6 +244,106 @@ class HttpApiService {
       }
     } catch (e) {
       throw Exception('DELETE $uri thất bại: $e');
+    }
+  }
+
+  Future<List<DiningTable>> getTables(String restaurantId) async {
+    final data = await _getJson(_u('/restaurants/tables', {'restaurantId': restaurantId}), restaurantId: restaurantId);
+    return (data['tables'] as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((m) => DiningTable.fromMap(m))
+        .toList();
+  }
+
+  Future<void> addTable(String restaurantId, String tableName) async {
+    await _postJson('/restaurants/tables', {'restaurantId': restaurantId, 'name': tableName}, restaurantId: restaurantId);
+  }
+
+  Future<void> updateTableStatus(String restaurantId, String tableId, TableState state) async {
+    String status = 'empty';
+    if (state == TableState.serving) status = 'serving';
+    if (state == TableState.waitingPayment) status = 'waiting_payment';
+
+    final uri = _u('/restaurants/tables/$tableId/status');
+    try {
+      var res = await http.patch(uri,
+        headers: await _headers(restaurantId: restaurantId),
+        body: jsonEncode({'status': status})
+      ).timeout(const Duration(seconds: 12));
+
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.patch(uri,
+          headers: await _headers(restaurantId: restaurantId),
+          body: jsonEncode({'status': status})
+        ).timeout(const Duration(seconds: 12));
+      }
+
+      if (res.statusCode >= 400) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('PATCH $uri thất bại: $e');
+    }
+  }
+
+  Future<List<KitchenTicket>> getOrderItems(String restaurantId, {String? status, String? tableId}) async {
+    final params = {'restaurantId': restaurantId};
+    if (status != null) params['status'] = status;
+    if (tableId != null) params['tableId'] = tableId;
+    final data = await _getJson(_u('/restaurants/order-items', params), restaurantId: restaurantId);
+    return (data['items'] as List<dynamic>)
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .map((m) => KitchenTicket(
+              id: m['id']?.toString(),
+              table: m['table_name'] as String? ?? 'N/A',
+              item: m['item_name'] as String? ?? 'N/A',
+              qty: (m['quantity'] as num).toInt(),
+              status: m['status'] as String,
+              note: m['note'] as String? ?? '',
+              price: (m['price'] as num?)?.toInt() ?? 0,
+            ))
+        .toList();
+  }
+
+  Future<String> addOrderItem({
+    required String restaurantId,
+    required String tableId,
+    required String menuItemId,
+    required int quantity,
+    String note = '',
+  }) async {
+    final data = await _postJson('/restaurants/order-items', {
+      'restaurantId': restaurantId,
+      'tableId': tableId,
+      'menuItemId': menuItemId,
+      'quantity': quantity,
+      'note': note,
+    }, restaurantId: restaurantId);
+    return data['id'].toString();
+  }
+
+  Future<void> updateOrderItemStatus(String restaurantId, String itemId, String status) async {
+    final uri = _u('/restaurants/order-items/$itemId/status');
+    try {
+      var res = await http.patch(uri,
+        headers: await _headers(restaurantId: restaurantId),
+        body: jsonEncode({'status': status})
+      ).timeout(const Duration(seconds: 12));
+
+      if (res.statusCode == 401 && await _tryRefreshToken()) {
+        res = await http.patch(uri,
+          headers: await _headers(restaurantId: restaurantId),
+          body: jsonEncode({'status': status})
+        ).timeout(const Duration(seconds: 12));
+      }
+
+      if (res.statusCode >= 400) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        throw Exception(data['error'] ?? 'HTTP ${res.statusCode}');
+      }
+    } catch (e) {
+      throw Exception('PATCH $uri thất bại: $e');
     }
   }
 

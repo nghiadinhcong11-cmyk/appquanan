@@ -6,6 +6,7 @@ import '../../billing/presentation/billing_screen.dart';
 import '../../menu/presentation/menu_management_screen.dart';
 import '../../orders/presentation/orders_screen.dart';
 import '../../tables/presentation/tables_screen.dart';
+import '../../staff/presentation/staff_management_screen.dart';
 import 'overview_screen.dart';
 
 class HomeShell extends StatefulWidget {
@@ -14,6 +15,7 @@ class HomeShell extends StatefulWidget {
     required this.user,
     required this.roleLabel,
     required this.restaurantName,
+    required this.restaurantId,
     required this.ownerApplication,
     required this.myStaffRequests,
     required this.discoverableRestaurants,
@@ -30,6 +32,7 @@ class HomeShell extends StatefulWidget {
   final UserAccount user;
   final String roleLabel;
   final String restaurantName;
+  final String restaurantId;
   final OwnerApplication? ownerApplication;
   final List<StaffRoleRequest> myStaffRequests;
   final List<String> discoverableRestaurants;
@@ -51,15 +54,161 @@ class _HomeShellState extends State<HomeShell> {
 
   String get _activeRestaurant => widget.restaurantName.isEmpty ? 'Cơ sở demo' : widget.restaurantName;
 
-  List<Widget> get _pages => [
-        OverviewScreen(api: widget.api, restaurantName: _activeRestaurant),
-        TablesScreen(api: widget.api, restaurantName: _activeRestaurant),
-        const OrdersScreen(),
-        BillingScreen(api: widget.api, restaurantName: _activeRestaurant),
-        MenuManagementScreen(api: widget.api, restaurantName: _activeRestaurant, username: widget.user.username),
-      ];
+  List<({Widget page, String title, NavigationDestination nav})> get _filteredTabs {
+    final tabs = [
+      (
+        page: OverviewScreen(
+          api: widget.api,
+          restaurantName: _activeRestaurant,
+          restaurantId: widget.restaurantId,
+          user: widget.user,
+        ),
+        title: 'Tổng quan',
+        nav: const NavigationDestination(icon: Icon(Icons.home), label: 'Tổng quan'),
+      ),
+      (
+        page: TablesScreen(
+          api: widget.api,
+          restaurantName: _activeRestaurant,
+          restaurantId: widget.restaurantId,
+          user: widget.user,
+        ),
+        title: 'Sơ đồ',
+        nav: const NavigationDestination(icon: Icon(Icons.map), label: 'Sơ đồ'),
+      ),
+      (
+        page: OrdersScreen(api: widget.api, restaurantId: widget.restaurantId),
+        title: 'Bán hàng',
+        nav: const NavigationDestination(icon: Icon(Icons.receipt), label: 'Bán hàng'),
+      ),
+    ];
 
-  List<String> get _titles => const ['Tổng quan', 'Sơ đồ bàn', 'Bán hàng', 'Lịch sử bill', 'Menu'];
+    if (widget.user.canSeeBills) {
+      tabs.add((
+        page: BillingScreen(
+          api: widget.api,
+          restaurantName: _activeRestaurant,
+          restaurantId: widget.restaurantId,
+        ),
+        title: 'Lịch sử bill',
+        nav: const NavigationDestination(icon: Icon(Icons.request_page), label: 'Bill'),
+      ));
+    }
+
+    if (widget.user.canManageInventory) {
+      tabs.add((
+        page: MenuManagementScreen(
+          api: widget.api,
+          restaurantName: _activeRestaurant,
+          restaurantId: widget.restaurantId,
+          username: widget.user.username,
+        ),
+        title: 'Menu',
+        nav: const NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
+      ));
+    }
+
+    return tabs;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ownerStatus = widget.ownerApplication?.status;
+    final user = widget.user;
+    final tabs = _filteredTabs;
+
+    // Ensure index doesn't go out of bounds if permissions change
+    if (_index >= tabs.length) {
+      _index = 0;
+    }
+
+    return Scaffold(
+      drawer: Drawer(
+        child: Column(
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(16, 46, 16, 20),
+              decoration: const BoxDecoration(color: Color(0xFFE30D25), borderRadius: BorderRadius.only(bottomRight: Radius.circular(38))),
+              child: Row(
+                children: [
+                  const CircleAvatar(radius: 24, child: Icon(Icons.person)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(user.displayName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                      const SizedBox(height: 4),
+                      Text(widget.roleLabel, style: const TextStyle(color: Colors.white70)),
+                      Text(_activeRestaurant, style: const TextStyle(color: Colors.white70)),
+                      if (user.isAdmin) const Text('VAI TRÒ: ADMIN HỆ THỐNG', style: TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
+                    ]),
+                  ),
+                ],
+              ),
+            ),
+            if (user.isAdmin)
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings, color: Colors.orange),
+                title: const Text('ADMIN: Duyệt chủ quán', style: TextStyle(fontWeight: FontWeight.bold)),
+                onTap: _openAdminApproveSheet,
+              ),
+            const Divider(),
+            ListTile(
+              leading: const Icon(Icons.storefront, color: Colors.red),
+              title: Text(ownerStatus == null ? 'Đăng ký làm chủ quán' : 'Hồ sơ chủ quán: ${_statusLabel(ownerStatus)}'),
+              onTap: ownerStatus == null ? _openOwnerRequestForm : null,
+            ),
+            if (ownerStatus == RequestStatus.pending)
+              ListTile(
+                leading: const Icon(Icons.admin_panel_settings, color: Colors.red),
+                title: const Text('Giả lập Admin duyệt hồ sơ'),
+                onTap: () => widget.onMockAdminApproveOwner(widget.ownerApplication!.id),
+              ),
+            ListTile(
+              leading: const Icon(Icons.badge, color: Colors.red),
+              title: const Text('Yêu cầu vai trò nhân sự/quản lý'),
+              onTap: _openStaffRequestForm,
+            ),
+            if (user.canManageStaff) ...[
+              const Divider(),
+              ListTile(
+                leading: const Icon(Icons.people, color: Colors.red),
+                title: const Text('Quản lý nhân sự'),
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => StaffManagementScreen(
+                        api: widget.api,
+                        restaurantName: widget.restaurantName,
+                        restaurantId: widget.restaurantId,
+                        pendingRequests: widget.pendingApprovals,
+                        onApprove: widget.onApproveStaff,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+            ListTile(
+              leading: const Icon(Icons.logout, color: Colors.red),
+              title: const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
+              onTap: widget.onLogout,
+            ),
+            const Spacer(),
+            const Padding(padding: EdgeInsets.only(bottom: 18), child: Text('© 2026 - Restaurant POS v0.1.0')),
+          ],
+        ),
+      ),
+      appBar: AppBar(backgroundColor: const Color(0xFFE30D25), foregroundColor: Colors.white, title: Text(tabs[_index].title)),
+      body: tabs[_index].page,
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: _index,
+        onDestinationSelected: (value) => setState(() => _index = value),
+        destinations: tabs.map((t) => t.nav).toList(),
+      ),
+    );
+  }
 
   String _statusLabel(RequestStatus status) {
     switch (status) {
@@ -262,90 +411,6 @@ class _HomeShellState extends State<HomeShell> {
           ),
         );
       },
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final ownerStatus = widget.ownerApplication?.status;
-    final user = widget.user;
-
-    return Scaffold(
-      drawer: Drawer(
-        child: Column(
-          children: [
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.fromLTRB(16, 46, 16, 20),
-              decoration: const BoxDecoration(color: Color(0xFFE30D25), borderRadius: BorderRadius.only(bottomRight: Radius.circular(38))),
-              child: Row(
-                children: [
-                  const CircleAvatar(radius: 24, child: Icon(Icons.person)),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(user.displayName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 4),
-                      Text(widget.roleLabel, style: const TextStyle(color: Colors.white70)),
-                      Text(_activeRestaurant, style: const TextStyle(color: Colors.white70)),
-                      if (user.isAdmin) const Text('VAI TRÒ: ADMIN HỆ THỐNG', style: TextStyle(color: Colors.yellow, fontSize: 10, fontWeight: FontWeight.bold)),
-                    ]),
-                  ),
-                ],
-              ),
-            ),
-            if (user.isAdmin)
-              ListTile(
-                leading: const Icon(Icons.admin_panel_settings, color: Colors.orange),
-                title: const Text('ADMIN: Duyệt chủ quán', style: TextStyle(fontWeight: FontWeight.bold)),
-                onTap: _openAdminApproveSheet,
-              ),
-            const Divider(),
-            ListTile(
-              leading: const Icon(Icons.storefront, color: Colors.red),
-              title: Text(ownerStatus == null ? 'Đăng ký làm chủ quán' : 'Hồ sơ chủ quán: ${_statusLabel(ownerStatus)}'),
-              onTap: ownerStatus == null ? _openOwnerRequestForm : null,
-            ),
-            if (ownerStatus == RequestStatus.pending)
-              ListTile(
-                leading: const Icon(Icons.admin_panel_settings, color: Colors.red),
-                title: const Text('Giả lập Admin duyệt hồ sơ'),
-                onTap: () => widget.onMockAdminApproveOwner(widget.ownerApplication!.id),
-              ),
-            ListTile(
-              leading: const Icon(Icons.badge, color: Colors.red),
-              title: const Text('Yêu cầu vai trò nhân sự/quản lý'),
-              onTap: _openStaffRequestForm,
-            ),
-            if (user.canManageStaff)
-              ListTile(
-                leading: const Icon(Icons.verified_user, color: Colors.red),
-                title: Text('Duyệt yêu cầu nhân sự (${widget.pendingApprovals.length})'),
-                onTap: _openApproveSheet,
-              ),
-            ListTile(
-              leading: const Icon(Icons.logout, color: Colors.red),
-              title: const Text('Đăng xuất', style: TextStyle(color: Colors.red)),
-              onTap: widget.onLogout,
-            ),
-            const Spacer(),
-            const Padding(padding: EdgeInsets.only(bottom: 18), child: Text('© 2026 - Restaurant POS v0.1.0')),
-          ],
-        ),
-      ),
-      appBar: AppBar(backgroundColor: const Color(0xFFE30D25), foregroundColor: Colors.white, title: Text(_titles[_index])),
-      body: _pages[_index],
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (value) => setState(() => _index = value),
-        destinations: [
-          const NavigationDestination(icon: Icon(Icons.home), label: 'Tổng quan'),
-          const NavigationDestination(icon: Icon(Icons.map), label: 'Sơ đồ'),
-          const NavigationDestination(icon: Icon(Icons.receipt), label: 'Bán hàng'),
-          const NavigationDestination(icon: Icon(Icons.request_page), label: 'Bill'),
-          if (user.canManageInventory) const NavigationDestination(icon: Icon(Icons.restaurant_menu), label: 'Menu'),
-        ],
-      ),
     );
   }
 }

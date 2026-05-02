@@ -5,10 +5,11 @@ import '../../../shared/models/business_models.dart';
 import '../../../shared/store/restaurant_store.dart';
 
 class MenuManagementScreen extends StatefulWidget {
-  const MenuManagementScreen({super.key, required this.api, required this.restaurantName, required this.username});
+  const MenuManagementScreen({super.key, required this.api, required this.restaurantName, required this.restaurantId, required this.username});
 
   final HttpApiService api;
   final String restaurantName;
+  final String restaurantId;
   final String username;
 
   @override
@@ -21,12 +22,12 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
   @override
   void initState() {
     super.initState();
-    _future = widget.api.getMenuItems(widget.restaurantName);
+    _future = widget.api.getMenuItems(restaurantId: widget.restaurantId);
   }
 
   Future<void> _reload() async {
     setState(() {
-      _future = widget.api.getMenuItems(widget.restaurantName);
+      _future = widget.api.getMenuItems(restaurantId: widget.restaurantId);
     });
   }
 
@@ -64,12 +65,11 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
               final price = int.tryParse(priceController.text.trim());
               if (name.isEmpty || price == null || price <= 0) return;
               await widget.api.addMenuItem(
-                restaurantName: widget.restaurantName,
+                restaurantId: widget.restaurantId,
                 name: name,
                 price: price,
                 description: descController.text.trim(),
                 imageUrl: imageController.text.trim(),
-                createdBy: widget.username,
               );
               if (!mounted) return;
               Navigator.pop(context);

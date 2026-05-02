@@ -4,10 +4,11 @@ import '../../../core/api/http_api_service.dart';
 import '../../../shared/models/business_models.dart';
 
 class BillingScreen extends StatefulWidget {
-  const BillingScreen({super.key, required this.api, required this.restaurantName});
+  const BillingScreen({super.key, required this.api, required this.restaurantName, required this.restaurantId});
 
   final HttpApiService api;
   final String restaurantName;
+  final String restaurantId;
 
   @override
   State<BillingScreen> createState() => _BillingScreenState();
@@ -19,14 +20,14 @@ class _BillingScreenState extends State<BillingScreen> {
   @override
   void initState() {
     super.initState();
-    _future = widget.api.getBills(widget.restaurantName);
+    _future = widget.api.getBills(restaurantId: widget.restaurantId);
   }
 
   String _formatMoney(int value) => '${value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (m) => '.')} đ';
 
   Future<void> _reload() async {
     setState(() {
-      _future = widget.api.getBills(widget.restaurantName);
+      _future = widget.api.getBills(restaurantId: widget.restaurantId);
     });
   }
 

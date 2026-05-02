@@ -5,6 +5,8 @@ const { pool } = require('./db');
 const authRoutes = require('./routes/auth.routes');
 const appRoutes = require('./routes/app.routes');
 
+const path = require('path');
+
 const app = express();
 
 app.use(cors());
@@ -12,6 +14,18 @@ app.use(express.json());
 
 app.use('/auth', authRoutes);
 app.use('/', appRoutes);
+
+// Serve Flutter Web static files
+const publicPath = path.join(__dirname, '../public');
+app.use(express.static(publicPath));
+
+// Fallback for SPA (Single Page Application)
+app.get('*', (req, res, next) => {
+  if (req.path.startsWith('/auth') || req.path === '/health' || req.path === '/bootstrap') {
+    return next();
+  }
+  res.sendFile(path.join(publicPath, 'index.html'));
+});
 
 // Global error handler
 app.use((err, _req, res, _next) => {

@@ -6,6 +6,7 @@ enum RequestStatus { pending, approved, rejected }
 
 class UserAccount {
   const UserAccount({
+    this.id,
     required this.username,
     required this.password,
     required this.displayName,
@@ -13,22 +14,39 @@ class UserAccount {
     this.currentRestaurantRole,
   });
 
+  final String? id;
   final String username;
   final String password;
   final String displayName;
   final String systemRole;
   final AccountRole? currentRestaurantRole;
 
-  bool get isAdmin => systemRole == 'admin';
+  bool get isAdmin => systemRole.trim().toLowerCase() == 'admin';
 
   // Helper getters for RBAC UI
-  bool get canManageInventory => isAdmin || [AccountRole.owner, AccountRole.manager].contains(currentRestaurantRole);
-  bool get canManageStaff => isAdmin || [AccountRole.owner, AccountRole.manager].contains(currentRestaurantRole);
+  bool get canManageInventory => isAdmin ||
+      currentRestaurantRole == AccountRole.owner ||
+      currentRestaurantRole == AccountRole.manager;
+
+  bool get canManageStaff => isAdmin ||
+      currentRestaurantRole == AccountRole.owner ||
+      currentRestaurantRole == AccountRole.manager;
+
+  bool get canSeeReports => isAdmin ||
+      currentRestaurantRole == AccountRole.owner ||
+      currentRestaurantRole == AccountRole.manager;
+
+  bool get canSeeBills => isAdmin ||
+      currentRestaurantRole == AccountRole.owner ||
+      currentRestaurantRole == AccountRole.manager ||
+      currentRestaurantRole == AccountRole.cashier;
+
   bool get isKitchen => currentRestaurantRole == AccountRole.kitchen;
   bool get isWaiter => currentRestaurantRole == AccountRole.waiter;
   bool get isCashier => currentRestaurantRole == AccountRole.cashier;
 
   Map<String, dynamic> toMap() => {
+        'id': id,
         'username': username,
         'password': password,
         'displayName': displayName,
@@ -37,12 +55,13 @@ class UserAccount {
       };
 
   static UserAccount fromMap(Map<String, dynamic> map) => UserAccount(
+        id: map['id']?.toString(),
         username: map['username'] as String,
         password: map['password'] as String? ?? '',
         displayName: map['displayName'] as String,
         systemRole: map['systemRole'] as String? ?? 'user',
-        currentRestaurantRole: map['currentRestaurantRole'] != null
-            ? AccountRole.values.firstWhere((e) => e.name == map['currentRestaurantRole'])
+        currentRestaurantRole: (map['currentRestaurantRole'] != null || map['role'] != null)
+            ? AccountRole.values.firstWhere((e) => e.name == (map['currentRestaurantRole'] ?? map['role']))
             : null,
       );
 }
@@ -135,22 +154,26 @@ class StaffRoleRequest {
 class RoleAssignment {
   const RoleAssignment({
     required this.username,
+    required this.restaurantId,
     required this.restaurantName,
     required this.role,
   });
 
   final String username;
+  final String restaurantId;
   final String restaurantName;
   final AccountRole role;
 
   Map<String, dynamic> toMap() => {
         'username': username,
+        'restaurantId': restaurantId,
         'restaurantName': restaurantName,
         'role': role.name,
       };
 
   static RoleAssignment fromMap(Map<String, dynamic> map) => RoleAssignment(
         username: map['username'] as String,
+        restaurantId: map['restaurantId'] as String? ?? '',
         restaurantName: map['restaurantName'] as String,
         role: AccountRole.values.firstWhere((e) => e.name == map['role']),
       );

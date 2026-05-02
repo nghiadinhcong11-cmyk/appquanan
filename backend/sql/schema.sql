@@ -23,6 +23,15 @@ CREATE TABLE IF NOT EXISTS restaurants (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE IF NOT EXISTS tables (
+  id BIGSERIAL PRIMARY KEY,
+  restaurant_id BIGINT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  name VARCHAR(100) NOT NULL,
+  status VARCHAR(50) NOT NULL DEFAULT 'empty', -- 'empty', 'serving', 'waiting_payment'
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE(restaurant_id, name)
+);
+
 CREATE TABLE IF NOT EXISTS role_assignments (
   id BIGSERIAL PRIMARY KEY,
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -75,6 +84,19 @@ CREATE TABLE IF NOT EXISTS orders (
   item_count INTEGER NOT NULL DEFAULT 0,
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS order_items (
+  id BIGSERIAL PRIMARY KEY,
+  restaurant_id BIGINT NOT NULL REFERENCES restaurants(id) ON DELETE CASCADE,
+  table_id BIGINT REFERENCES tables(id) ON DELETE SET NULL,
+  menu_item_id BIGINT REFERENCES menus(id) ON DELETE SET NULL,
+  quantity INTEGER NOT NULL DEFAULT 1,
+  note TEXT,
+  status VARCHAR(50) NOT NULL DEFAULT 'pending', -- 'pending', 'preparing', 'ready', 'served', 'cancelled'
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  bill_id BIGINT REFERENCES orders(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (

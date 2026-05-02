@@ -1,0 +1,28 @@
+# API Secrets
+.env
+backend/.env
+
+# Dependencies
+node_modules/
+backend/node_modules/
+
+# Flutter related
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+build/
+restaurant_app/build/
+
+# IDEs
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Database local
+backend/restaurant.db

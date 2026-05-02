@@ -37,7 +37,7 @@ class _RestaurantAppState extends State<RestaurantApp> {
       UserAccount? current;
       if (sessionUsername != null) {
         for (final user in data.accounts) {
-          if (user.username == sessionUsername) {
+          if (user.username.toLowerCase() == sessionUsername.toLowerCase()) {
             current = user;
             break;
           }
@@ -67,7 +67,7 @@ class _RestaurantAppState extends State<RestaurantApp> {
       _data = data;
       if (_currentUser != null) {
         for (final user in data.accounts) {
-          if (user.username == _currentUser!.username) {
+          if (user.username.toLowerCase() == _currentUser!.username.toLowerCase()) {
             _currentUser = user;
             break;
           }
@@ -174,20 +174,24 @@ class _RestaurantAppState extends State<RestaurantApp> {
     if (user == null) {
       home = AuthScreen(onLogin: _login, onRegister: _register);
     } else {
+      // 1. Tìm đơn đăng ký chủ quán của tôi
       OwnerApplication? myOwnerApp;
-      for (final app in _data.ownerApplications) {
-        if (app.username == user.username) {
-          myOwnerApp = app;
-          break;
-        }
+      try {
+        myOwnerApp = _data.ownerApplications.firstWhere(
+          (app) => app.username.trim().toLowerCase() == user.username.trim().toLowerCase()
+        );
+      } catch (_) {
+        myOwnerApp = null;
       }
 
+      // 2. Tìm vai trò nhân viên của tôi
       RoleAssignment? myRole;
-      for (final role in _data.roleAssignments) {
-        if (role.username == user.username) {
-          myRole = role;
-          break;
-        }
+      try {
+        myRole = _data.roleAssignments.firstWhere(
+          (ra) => ra.username.trim().toLowerCase() == user.username.trim().toLowerCase()
+        );
+      } catch (_) {
+        myRole = null;
       }
 
       final approvedRestaurants = _data.ownerApplications
@@ -196,28 +200,61 @@ class _RestaurantAppState extends State<RestaurantApp> {
           .toSet()
           .toList();
 
-      final pendingRequestsForMyRestaurant = myOwnerApp != null && myOwnerApp.status == RequestStatus.approved
+      AccountRole? effectiveRole;
+      String activeRestaurant = '';
+      String activeRestaurantId = '';
+      String activeRoleLabel = 'Tài khoản thường';
+
+      // Ưu tiên quyền Chủ quán trước
+      if (myOwnerApp != null && myOwnerApp.status == RequestStatus.approved) {
+        effectiveRole = AccountRole.owner;
+        activeRestaurant = myOwnerApp.restaurantName;
+        activeRoleLabel = 'Chủ quán';
+        // Lấy ID từ roleAssignments hoặc một nguồn khác.
+        // May mắn là roleAssignments chứa cả ID.
+        try {
+          activeRestaurantId = _data.roleAssignments.firstWhere(
+            (ra) => ra.restaurantName.toLowerCase() == activeRestaurant.toLowerCase()
+          ).restaurantId;
+        } catch (_) {}
+      } else if (myRole != null) {
+        effectiveRole = myRole.role;
+        activeRestaurant = myRole.restaurantName;
+        activeRestaurantId = myRole.restaurantId;
+        switch (effectiveRole) {
+          case AccountRole.manager: activeRoleLabel = 'Quản lý'; break;
+          case AccountRole.cashier: activeRoleLabel = 'Thu ngân'; break;
+          case AccountRole.waiter: activeRoleLabel = 'Phục vụ'; break;
+          case AccountRole.kitchen: activeRoleLabel = 'Đầu bếp'; break;
+          default: activeRoleLabel = 'Nhân viên';
+        }
+      }
+
+      // TẠO ĐỐI TƯỢNG USER MỚI CÓ KÈM VAI TRÒ ĐỂ GATING UI
+      final userWithRole = UserAccount(
+        username: user.username,
+        password: user.password,
+        displayName: user.displayName,
+        systemRole: user.systemRole,
+        currentRestaurantRole: effectiveRole,
+      );
+
+      final pendingRequestsForMyRestaurant = activeRestaurant.isNotEmpty &&
+          (effectiveRole == AccountRole.owner || effectiveRole == AccountRole.manager)
           ? _data.staffRoleRequests
-              .where((e) => e.restaurantName.toLowerCase() == myOwnerApp!.restaurantName.toLowerCase() && e.status == RequestStatus.pending)
+              .where((e) => e.restaurantName.toLowerCase() == activeRestaurant.toLowerCase() && e.status == RequestStatus.pending)
               .toList()
           : <StaffRoleRequest>[];
 
-      String activeRoleLabel = 'Tài khoản thường';
-      String activeRestaurant = '';
-      if (myOwnerApp != null && myOwnerApp.status == RequestStatus.approved) {
-        activeRoleLabel = 'Chủ quán';
-        activeRestaurant = myOwnerApp.restaurantName;
-      } else if (myRole != null) {
-        activeRoleLabel = myRole.role == AccountRole.manager ? 'Quản lý' : 'Nhân viên';
-        activeRestaurant = myRole.restaurantName;
-      }
-
       home = HomeShell(
-        user: user,
+        user: userWithRole,
         roleLabel: activeRoleLabel,
         restaurantName: activeRestaurant,
+        restaurantId: activeRestaurantId,
         ownerApplication: myOwnerApp,
-        myStaffRequests: _data.staffRoleRequests.where((e) => e.username == user.username).toList(),
+        myStaffRequests: _data.staffRoleRequests
+            .where((e) => e.username.trim().toLowerCase() == user.username.trim().toLowerCase())
+            .toList(),
         discoverableRestaurants: approvedRestaurants,
         onSubmitOwnerApplication: _submitOwnerApplication,
         onSubmitStaffRequest: _submitStaffRequest,

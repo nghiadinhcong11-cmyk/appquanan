@@ -4,7 +4,8 @@
   "private": true,
   "main": "src/server.js",
   "scripts": {
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "build": "cd .. && bash build.sh"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
