@@ -14,7 +14,6 @@ backend/node_modules/
 .pub/
 build/
 restaurant_app/build/
-backend/public/
 
 # IDEs
 .idea/
