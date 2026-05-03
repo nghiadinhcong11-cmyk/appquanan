@@ -348,7 +348,7 @@ router.post('/bills', auth, permitRestaurantRoles(['owner', 'manager', 'cashier'
     if (tableId) {
       // Gắn bill_id vào các order_items của bàn này mà chưa có bill và cập nhật trạng thái
       await client.query(
-        "UPDATE order_items SET bill_id = $1, status = 'billed' WHERE table_id = $2 AND bill_id IS NULL AND restaurant_id = $3",
+        "UPDATE order_items SET bill_id = $1, status = 'paid' WHERE table_id = $2 AND bill_id IS NULL AND restaurant_id = $3",
         [billId, tableId, restaurantId]
       );
       // Chuyển trạng thái bàn về 'empty' sau khi thanh toán
@@ -517,9 +517,11 @@ router.patch('/restaurants/tables/:id/status', auth, permitRestaurantRoles(['own
 });
 
 // Orders & Kitchen Management
+
+// 1. Lấy món ăn theo bàn hoặc theo trạng thái (Dùng cho nhân viên phục vụ/thu ngân)
 router.get('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', 'kitchen', 'cashier']), async (req, res) => {
   try {
-    const { status, tableId } = req.query;
+    const { status, tableId, includePaid, includeBilled } = req.query;
     const restaurantId = req.restaurantId;
     let query = `
       SELECT oi.id::text, oi.table_id::text, t.name as table_name, oi.menu_item_id::text, m.name as item_name,
@@ -538,14 +540,16 @@ router.get('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'ma
       query += ' AND oi.table_id = $' + (params.length + 1);
       params.push(tableId);
     }
-    // Only show items that haven't been billed yet unless specifically requested?
-    // Usually for active table view, we want unbilled items.
-    if (!req.query.includeBilled || req.query.includeBilled === 'false') {
-      query += ' AND oi.bill_id IS NULL';
+
+    // Mặc định không lấy món đã thanh toán (paid) trừ khi có yêu cầu (để xem lịch sử bàn)
+    const showAll = (includePaid === 'true' || includeBilled === 'true');
+    if (!showAll) {
+      query += " AND oi.status != 'paid' AND oi.bill_id IS NULL";
     }
 
     query += ' ORDER BY oi.created_at ASC';
 
+    // Dùng pool.query để tự động release connection
     const rows = await pool.query(query, params);
     res.json({ items: rows.rows });
   } catch (e) {
@@ -553,6 +557,28 @@ router.get('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'ma
   }
 });
 
+// 2. Lấy danh sách món cho Bếp (Kitchen) - Chỉ lấy món đang chờ hoặc đang nấu
+router.get('/kitchen/orders', auth, permitRestaurantRoles(['owner', 'manager', 'kitchen']), async (req, res) => {
+  try {
+    const restaurantId = req.restaurantId;
+    const rows = await pool.query(
+      `SELECT oi.id::text, t.name as table_name, m.name as item_name,
+              oi.quantity, oi.note, oi.status, oi.created_at
+       FROM order_items oi
+       JOIN tables t ON t.id = oi.table_id
+       JOIN menus m ON m.id = oi.menu_item_id
+       WHERE oi.restaurant_id = $1
+       AND oi.status IN ('pending', 'preparing', 'ready')
+       ORDER BY oi.created_at ASC`,
+      [restaurantId]
+    );
+    res.json({ items: rows.rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// 3. Thêm món vào bàn (Tối ưu Transaction & Tự động update Table Status)
 router.post('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'manager', 'waiter']), async (req, res) => {
   const client = await pool.connect();
   try {
@@ -585,17 +611,22 @@ router.post('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'm
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('Order Item Error:', e);
-    res.status(500).json({ error: e.message });
+    res.status(500).json({ error: 'Không thể thêm món: ' + e.message });
   } finally {
+    // Luôn giải phóng client về pool
     client.release();
   }
 });
 
+// 4. Cập nhật trạng thái món ăn (Bếp/Phục vụ dùng)
 router.patch('/restaurants/order-items/:id/status', auth, permitRestaurantRoles(['owner', 'manager', 'kitchen', 'waiter']), async (req, res) => {
   try {
-    const { status } = req.body;
-    const result = await pool.query('UPDATE order_items SET status = $1 WHERE id = $2 AND restaurant_id = $3', [status, req.params.id, req.restaurantId]);
-    if (result.rowCount === 0) return res.status(404).json({ error: 'Order item not found in this restaurant' });
+    const { status } = req.body; // pending, preparing, ready, served, paid, cancelled
+    const result = await pool.query(
+      'UPDATE order_items SET status = $1 WHERE id = $2 AND restaurant_id = $3',
+      [status, req.params.id, req.restaurantId]
+    );
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Không tìm thấy món hoặc không có quyền' });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

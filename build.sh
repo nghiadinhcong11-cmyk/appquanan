@@ -5,7 +5,7 @@ set -e
 
 echo "Building Flutter Web..."
 cd restaurant_app
-flutter build web --release --dart-define=API_BASE_URL=https://appquanan.onrender.com
+flutter build web --release --dart-define=API_BASE_URL=https://appquanan.onrender.com/api
 
 echo "Copying Flutter build to backend/public..."
 cd ..

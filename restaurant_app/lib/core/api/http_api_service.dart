@@ -9,7 +9,7 @@ import '../storage/auth_storage.dart';
 
 class HttpApiService {
   HttpApiService(this._storage, {String? baseUrl})
-      : baseUrl = baseUrl ?? const String.fromEnvironment('API_BASE_URL', defaultValue: 'https://appquanan.onrender.com');
+      : baseUrl = baseUrl ?? const String.fromEnvironment('API_BASE_URL', defaultValue: 'https://appquanan.onrender.com/api');
 
   final AuthStorage _storage;
   final String baseUrl;
