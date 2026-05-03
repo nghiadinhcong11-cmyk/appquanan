@@ -103,27 +103,57 @@ class _StaffManagementScreenState extends State<StaffManagementScreen> {
   }
 
   void _showEditRoleDialog(UserAccount user) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Đổi vai trò cho ${user.displayName}'),
-        content: Column(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            AccountRole.manager,
-            AccountRole.cashier,
-            AccountRole.waiter,
-            AccountRole.kitchen
-          ].map((r) => ListTile(
-            title: Text(_roleToVN(r)),
-            onTap: () {
-              Navigator.pop(ctx);
-              _updateRole(user, r);
-            },
-          )).toList(),
+            Row(
+              children: [
+                const Icon(Icons.badge_outlined, color: Color(0xFFE30D25)),
+                const SizedBox(width: 8),
+                Text('Vai trò cho ${user.displayName}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+              ],
+            ),
+            const Divider(),
+            const SizedBox(height: 8),
+            ...[
+              AccountRole.manager,
+              AccountRole.cashier,
+              AccountRole.waiter,
+              AccountRole.kitchen
+            ].map((r) => ListTile(
+              leading: Icon(_getRoleIcon(r), color: Colors.grey),
+              title: Text(_roleToVN(r), style: const TextStyle(fontWeight: FontWeight.w500)),
+              onTap: () {
+                Navigator.pop(ctx);
+                _updateRole(user, r);
+              },
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            )),
+            const SizedBox(height: 12),
+          ],
         ),
       ),
     );
+  }
+
+  IconData _getRoleIcon(AccountRole role) {
+    switch (role) {
+      case AccountRole.manager: return Icons.manage_accounts;
+      case AccountRole.cashier: return Icons.point_of_sale;
+      case AccountRole.waiter: return Icons.restaurant;
+      case AccountRole.kitchen: return Icons.soup_kitchen;
+      default: return Icons.person;
+    }
   }
 
   @override

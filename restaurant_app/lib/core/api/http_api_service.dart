@@ -457,8 +457,11 @@ class HttpApiService {
     }
   }
 
-  Future<List<KitchenTicket>> getOrderItems(String restaurantId, {String? status, String? tableId}) async {
-    final params = {'restaurantId': restaurantId};
+  Future<List<KitchenTicket>> getOrderItems(String restaurantId, {String? status, String? tableId, bool includeBilled = false}) async {
+    final params = {
+      'restaurantId': restaurantId,
+      'includeBilled': includeBilled.toString(),
+    };
     if (status != null) params['status'] = status;
     if (tableId != null) params['tableId'] = tableId;
     final data = await _getJson(_u('/restaurants/order-items', params), restaurantId: restaurantId);

@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.get('/health', (_req, res) => res.json({ ok: true }));
 
-router.get('/bootstrap', async (_req, res) => {
+router.get('/bootstrap', auth, permitSystemRoles(['admin']), async (_req, res) => {
   try {
     const accounts = await pool.query('SELECT id::text, username, email, display_name, system_role FROM users ORDER BY created_at DESC');
     const ownerApplications = await pool.query(`
@@ -252,13 +252,12 @@ router.post('/staff-requests/:id/reject', auth, async (req, res) => {
 
 router.get('/menu', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', 'cashier', 'kitchen']), async (req, res) => {
   try {
-    const { restaurantId } = req.query;
-    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
+    const restaurantId = req.restaurantId;
 
     const rows = await pool.query(
       `SELECT m.id::text id, m.name, m.price, m.description, m.image_url, u.username created_by
        FROM menus m
-       JOIN users u ON u.id = m.created_by
+       LEFT JOIN users u ON u.id = m.created_by
        WHERE m.restaurant_id = $1
        ORDER BY m.created_at DESC`,
       [restaurantId]
@@ -269,7 +268,7 @@ router.get('/menu', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', '
       price: Number(r.price),
       description: r.description || '',
       imageUrl: r.image_url || '',
-      createdBy: r.created_by
+      createdBy: r.created_by || 'system'
     })) });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -278,14 +277,18 @@ router.get('/menu', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', '
 
 router.post('/menu', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
-    const { restaurantId, name, price, description, imageUrl } = req.body;
-    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
+    const { name, price, description, imageUrl } = req.body;
+    const restaurantId = req.restaurantId;
 
-    await pool.query(
-      'INSERT INTO menus(restaurant_id, name, price, description, image_url, created_by) VALUES($1,$2,$3,$4,$5,$6)',
+    if (!name || price == null) {
+      return res.status(400).json({ error: 'Tên và giá món ăn là bắt buộc' });
+    }
+
+    const result = await pool.query(
+      'INSERT INTO menus(restaurant_id, name, price, description, image_url, created_by) VALUES($1,$2,$3,$4,$5,$6) RETURNING id::text',
       [restaurantId, name, price, description || '', imageUrl || '', req.user.sub]
     );
-    res.json({ ok: true });
+    res.json({ ok: true, id: result.rows[0].id });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -293,8 +296,7 @@ router.post('/menu', auth, permitRestaurantRoles(['owner', 'manager']), async (r
 
 router.get('/bills', auth, permitRestaurantRoles(['owner', 'manager', 'cashier']), async (req, res) => {
   try {
-    const { restaurantId } = req.query;
-    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
+    const restaurantId = req.restaurantId;
 
     const rows = await pool.query(
       `SELECT o.id::text id, o.table_name, o.total, o.item_count, o.created_at
@@ -330,34 +332,45 @@ router.get('/bills/:id/items', auth, permitRestaurantRoles(['owner', 'manager', 
 });
 
 router.post('/bills', auth, permitRestaurantRoles(['owner', 'manager', 'cashier', 'waiter']), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { restaurantId, tableName, total, itemCount, tableId } = req.body;
-    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
+    const { tableName, total, itemCount, tableId } = req.body;
+    const restaurantId = req.restaurantId;
 
-    const result = await pool.query(
-      'INSERT INTO orders(restaurant_id, table_name, total, item_count, created_by) VALUES($1,$2,$3,$4,$5) RETURNING id::text',
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      'INSERT INTO orders(restaurant_id, table_name, total, item_count, created_by) VALUES($1,$2,$3,$4,$5) RETURNING id',
       [restaurantId, tableName, total, itemCount, req.user.sub]
     );
     const billId = result.rows[0].id;
 
-    // Gắn bill_id vào các order_items của bàn này mà chưa có bill
     if (tableId) {
-      await pool.query(
-        'UPDATE order_items SET bill_id = $1 WHERE table_id = $2 AND bill_id IS NULL AND restaurant_id = $3',
+      // Gắn bill_id vào các order_items của bàn này mà chưa có bill và cập nhật trạng thái
+      await client.query(
+        "UPDATE order_items SET bill_id = $1, status = 'billed' WHERE table_id = $2 AND bill_id IS NULL AND restaurant_id = $3",
         [billId, tableId, restaurantId]
+      );
+      // Chuyển trạng thái bàn về 'empty' sau khi thanh toán
+      await client.query(
+        "UPDATE tables SET status = 'empty' WHERE id = $1 AND restaurant_id = $2",
+        [tableId, restaurantId]
       );
     }
 
+    await client.query('COMMIT');
     res.json({ ok: true, id: billId });
   } catch (e) {
+    await client.query('ROLLBACK');
     res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
   }
 });
 
 router.get('/stats/today', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
-    const { restaurantId } = req.query;
-    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
+    const restaurantId = req.restaurantId;
 
     const statsResult = await pool.query(
       `SELECT COUNT(*)::int AS c, COALESCE(SUM(o.total),0)::numeric AS s
@@ -411,7 +424,7 @@ router.get('/stats/today', auth, permitRestaurantRoles(['owner', 'manager']), as
 // Staff Management Routes
 router.get('/restaurants/staff', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
-    const { restaurantId } = req.query;
+    const restaurantId = req.restaurantId;
     const rows = await pool.query(
       `SELECT u.id::text, u.username, u.display_name, ra.role
        FROM role_assignments ra
@@ -432,7 +445,8 @@ router.get('/restaurants/staff', auth, permitRestaurantRoles(['owner', 'manager'
 
 router.post('/restaurants/staff/update-role', auth, permitRestaurantRoles(['owner']), async (req, res) => {
   try {
-    const { restaurantId, userId, role } = req.body;
+    const { userId, role } = req.body;
+    const restaurantId = req.restaurantId;
     await pool.query(
       `UPDATE role_assignments SET role = $1
        WHERE restaurant_id = $2 AND user_id = $3`,
@@ -446,7 +460,8 @@ router.post('/restaurants/staff/update-role', auth, permitRestaurantRoles(['owne
 
 router.delete('/restaurants/staff', auth, permitRestaurantRoles(['owner']), async (req, res) => {
   try {
-    const { restaurantId, userId } = req.query;
+    const { userId } = req.query;
+    const restaurantId = req.restaurantId;
     await pool.query(
       `DELETE FROM role_assignments WHERE restaurant_id = $1 AND user_id = $2`,
       [restaurantId, userId]
@@ -460,8 +475,7 @@ router.delete('/restaurants/staff', auth, permitRestaurantRoles(['owner']), asyn
 // Table Management Routes
 router.get('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', 'cashier', 'kitchen']), async (req, res) => {
   try {
-    const { restaurantId } = req.query;
-    if (!restaurantId) return res.status(400).json({ error: 'Missing restaurantId' });
+    const restaurantId = req.restaurantId;
     const rows = await pool.query(
       'SELECT id::text, name, status, COALESCE(floor, 1) as floor, COALESCE(is_temporary, false) as "isTemporary" FROM tables WHERE restaurant_id = $1 ORDER BY floor ASC, name ASC',
       [restaurantId]
@@ -474,12 +488,18 @@ router.get('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manager
 
 router.post('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manager']), async (req, res) => {
   try {
-    const { restaurantId, name, floor, isTemporary } = req.body;
-    await pool.query(
-      'INSERT INTO tables(restaurant_id, name, floor, is_temporary) VALUES($1, $2, $3, $4) ON CONFLICT (restaurant_id, name) DO UPDATE SET floor = EXCLUDED.floor, is_temporary = EXCLUDED.is_temporary',
+    const { name, floor, isTemporary } = req.body;
+    const restaurantId = req.restaurantId;
+
+    if (!name) {
+      return res.status(400).json({ error: 'Tên bàn là bắt buộc' });
+    }
+
+    const result = await pool.query(
+      'INSERT INTO tables(restaurant_id, name, floor, is_temporary) VALUES($1, $2, $3, $4) ON CONFLICT (restaurant_id, name) DO UPDATE SET floor = EXCLUDED.floor, is_temporary = EXCLUDED.is_temporary RETURNING id::text',
       [restaurantId, name, Number.isFinite(Number(floor)) ? Number(floor) : 1, isTemporary || false]
     );
-    res.json({ ok: true });
+    res.json({ ok: true, id: result.rows[0].id });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
@@ -488,7 +508,8 @@ router.post('/restaurants/tables', auth, permitRestaurantRoles(['owner', 'manage
 router.patch('/restaurants/tables/:id/status', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', 'cashier']), async (req, res) => {
   try {
     const { status } = req.body;
-    await pool.query('UPDATE tables SET status = $1 WHERE id = $2', [status, req.params.id]);
+    const result = await pool.query('UPDATE tables SET status = $1 WHERE id = $2 AND restaurant_id = $3', [status, req.params.id, req.restaurantId]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Table not found in this restaurant' });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -498,7 +519,8 @@ router.patch('/restaurants/tables/:id/status', auth, permitRestaurantRoles(['own
 // Orders & Kitchen Management
 router.get('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'manager', 'waiter', 'kitchen', 'cashier']), async (req, res) => {
   try {
-    const { restaurantId, status, tableId } = req.query;
+    const { status, tableId } = req.query;
+    const restaurantId = req.restaurantId;
     let query = `
       SELECT oi.id::text, oi.table_id::text, t.name as table_name, oi.menu_item_id::text, m.name as item_name,
              oi.quantity, oi.note, oi.status, oi.created_at, m.price
@@ -518,7 +540,7 @@ router.get('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'ma
     }
     // Only show items that haven't been billed yet unless specifically requested?
     // Usually for active table view, we want unbilled items.
-    if (!req.query.includeBilled) {
+    if (!req.query.includeBilled || req.query.includeBilled === 'false') {
       query += ' AND oi.bill_id IS NULL';
     }
 
@@ -532,23 +554,48 @@ router.get('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'ma
 });
 
 router.post('/restaurants/order-items', auth, permitRestaurantRoles(['owner', 'manager', 'waiter']), async (req, res) => {
+  const client = await pool.connect();
   try {
-    const { restaurantId, tableId, menuItemId, quantity, note } = req.body;
-    const result = await pool.query(
-      `INSERT INTO order_items(restaurant_id, table_id, menu_item_id, quantity, note, created_by)
-       VALUES($1, $2, $3, $4, $5, $6) RETURNING id::text`,
+    const { tableId, menuItemId, quantity, note } = req.body;
+    const restaurantId = req.restaurantId;
+
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `INSERT INTO order_items
+       (restaurant_id, table_id, menu_item_id, quantity, note, created_by, status)
+       VALUES ($1, $2, $3, $4, $5, $6, 'pending')
+       RETURNING id::text`,
       [restaurantId, tableId, menuItemId, quantity, note || '', req.user.sub]
     );
+
+    if (tableId) {
+      await client.query(
+        `UPDATE tables
+         SET status = 'serving'
+         WHERE id = $1
+         AND restaurant_id = $2
+         AND status = 'empty'`,
+        [tableId, restaurantId]
+      );
+    }
+
+    await client.query('COMMIT');
     res.json({ id: result.rows[0].id });
   } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('Order Item Error:', e);
     res.status(500).json({ error: e.message });
+  } finally {
+    client.release();
   }
 });
 
 router.patch('/restaurants/order-items/:id/status', auth, permitRestaurantRoles(['owner', 'manager', 'kitchen', 'waiter']), async (req, res) => {
   try {
     const { status } = req.body;
-    await pool.query('UPDATE order_items SET status = $1 WHERE id = $2', [status, req.params.id]);
+    const result = await pool.query('UPDATE order_items SET status = $1 WHERE id = $2 AND restaurant_id = $3', [status, req.params.id, req.restaurantId]);
+    if (result.rowCount === 0) return res.status(404).json({ error: 'Order item not found in this restaurant' });
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });

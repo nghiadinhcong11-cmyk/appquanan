@@ -25,7 +25,12 @@ app.use(express.static(publicPath));
 
 // Fallback for SPA (Single Page Application)
 app.get('*', (req, res, next) => {
-  if (req.path.startsWith('/auth') || req.path === '/health' || req.path === '/bootstrap') {
+  const apiPaths = [
+    '/auth', '/public', '/private', '/health', '/bootstrap',
+    '/owner-applications', '/users', '/staff-requests',
+    '/menu', '/bills', '/stats', '/restaurants'
+  ];
+  if (apiPaths.some(p => req.path.startsWith(p))) {
     return next();
   }
   res.sendFile(path.join(publicPath, 'index.html'));

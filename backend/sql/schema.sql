@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS restaurants (
   name VARCHAR(255) NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_restaurants_name_lower_unique ON restaurants(lower(name));
 
 CREATE TABLE IF NOT EXISTS tables (
   id BIGSERIAL PRIMARY KEY,

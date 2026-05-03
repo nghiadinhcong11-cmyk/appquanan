@@ -1,8 +1,12 @@
 ﻿async function getOrCreateRestaurant(pool, restaurantName) {
-  const existing = await pool.query('SELECT id, name FROM restaurants WHERE lower(name)=lower($1) LIMIT 1', [restaurantName]);
-  if (existing.rowCount) return existing.rows[0];
-  const inserted = await pool.query('INSERT INTO restaurants(name) VALUES($1) RETURNING id, name', [restaurantName]);
-  return inserted.rows[0];
+  const query = `
+    INSERT INTO restaurants (name)
+    VALUES ($1)
+    ON CONFLICT (lower(name)) DO UPDATE SET name = EXCLUDED.name
+    RETURNING id, name
+  `;
+  const res = await pool.query(query, [restaurantName]);
+  return res.rows[0];
 }
 
 async function hasRestaurantRole(pool, userId, restaurantId, allowedRoles) {

@@ -14,10 +14,12 @@ backend/node_modules/
 .pub/
 build/
 restaurant_app/build/
+backend/public/
 
 # IDEs
 .idea/
 .vscode/
+.junie/
 *.iml
 
 # OS files
@@ -26,3 +28,5 @@ Thumbs.db
 
 # Database local
 backend/restaurant.db
+*.db
+*.sqlite

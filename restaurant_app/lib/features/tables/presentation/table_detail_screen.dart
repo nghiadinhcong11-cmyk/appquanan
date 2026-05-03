@@ -37,13 +37,20 @@ class _TableDetailScreenState extends State<TableDetailScreen> {
     _initData();
   }
 
+  @override
+  // ignore: unused_element
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _initData();
+  }
+
   Future<void> _initData() async {
     setState(() => _loading = true);
     try {
       final results = await Future.wait([
         widget.api.getMenuItems(restaurantId: widget.restaurantId),
         if (widget.tableId != null)
-          widget.api.getOrderItems(widget.restaurantId, tableId: widget.tableId)
+          widget.api.getOrderItems(widget.restaurantId, tableId: widget.tableId, includeBilled: true)
         else
           Future.value(<KitchenTicket>[]),
       ]);
@@ -82,70 +89,106 @@ class _TableDetailScreenState extends State<TableDetailScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (context) => StatefulBuilder(
         builder: (context, setModalState) {
           selected ??= _menu.isNotEmpty ? _menu.first : null;
           return Padding(
-            padding: EdgeInsets.only(left: 16, right: 16, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 16),
+            padding: EdgeInsets.only(
+              left: 20,
+              right: 20,
+              top: 20,
+              bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+            ),
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(height: 16),
-                const Text('Thêm món cho bàn', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    const Icon(Icons.add_shopping_cart, color: Color(0xFFE30D25)),
+                    const SizedBox(width: 8),
+                    const Text('Thêm món vào bàn', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    const Spacer(),
+                    IconButton(onPressed: () => Navigator.pop(context), icon: const Icon(Icons.close)),
+                  ],
+                ),
+                const Divider(),
                 const SizedBox(height: 12),
                 DropdownButtonFormField<MenuItemRecord>(
                   value: selected,
                   items: _menu.map((e) => DropdownMenuItem(value: e, child: Text('${e.name} - ${_formatMoney(e.price)}'))).toList(),
                   onChanged: (value) => setModalState(() => selected = value),
-                  decoration: const InputDecoration(labelText: 'Chọn món', border: OutlineInputBorder()),
-                ),
-                const SizedBox(height: 12),
-                TextField(controller: qtyController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Số lượng', border: OutlineInputBorder())),
-                const SizedBox(height: 12),
-                TextField(controller: noteController, decoration: const InputDecoration(labelText: 'Ghi chú', border: OutlineInputBorder())),
-                const SizedBox(height: 14),
-                SizedBox(
-                  width: double.infinity,
-                  child: FilledButton(
-                    onPressed: selected == null
-                        ? null
-                        : () async {
-                            final qty = int.tryParse(qtyController.text.trim()) ?? 0;
-                            if (qty <= 0) return;
-
-                            setState(() {
-                              _currentOrders.add({
-                                'name': selected!.name,
-                                'qty': qty,
-                                'price': selected!.price,
-                                'total': selected!.price * qty,
-                                'note': noteController.text.trim(),
-                                'menuItemId': selected!.id.toString(),
-                              });
-                            });
-
-                            // Gửi order xuống backend ngay lập tức nếu có tableId
-                            if (widget.tableId != null) {
-                              await widget.api.addOrderItem(
-                                restaurantId: widget.restaurantId,
-                                tableId: widget.tableId!,
-                                menuItemId: selected!.id.toString(),
-                                quantity: qty,
-                                note: noteController.text.trim(),
-                              );
-                            }
-
-                            // Cập nhật trạng thái bàn thành Đang phục vụ nếu là món đầu tiên
-                            if (_currentOrders.length == 1 && widget.tableId != null) {
-                              widget.api.updateTableStatus(widget.restaurantId, widget.tableId!, TableState.serving);
-                            }
-
-                            Navigator.pop(context);
-                          },
-                    child: const Text('Thêm vào bàn'),
+                  decoration: InputDecoration(
+                    labelText: 'Chọn món',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    prefixIcon: const Icon(Icons.restaurant_menu),
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: qtyController,
+                  keyboardType: TextInputType.number,
+                  decoration: InputDecoration(
+                    labelText: 'Số lượng',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    prefixIcon: const Icon(Icons.exposure_plus_1),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: noteController,
+                  decoration: InputDecoration(
+                    labelText: 'Ghi chú',
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    prefixIcon: const Icon(Icons.note_add_outlined),
+                  ),
+                ),
+                const SizedBox(height: 24),
+                FilledButton(
+                  onPressed: selected == null
+                      ? null
+                      : () async {
+                          final qty = int.tryParse(qtyController.text.trim()) ?? 0;
+                          if (qty <= 0) return;
+
+                          setState(() {
+                            _currentOrders.add({
+                              'name': selected!.name,
+                              'qty': qty,
+                              'price': selected!.price,
+                              'total': selected!.price * qty,
+                              'note': noteController.text.trim(),
+                              'menuItemId': selected!.id.toString(),
+                            });
+                          });
+
+                          if (widget.tableId != null) {
+                            await widget.api.addOrderItem(
+                              restaurantId: widget.restaurantId,
+                              tableId: widget.tableId!,
+                              menuItemId: selected!.id.toString(),
+                              quantity: qty,
+                              note: noteController.text.trim(),
+                            );
+                          }
+
+                          if (_currentOrders.length == 1 && widget.tableId != null) {
+                            widget.api.updateTableStatus(widget.restaurantId, widget.tableId!, TableState.serving);
+                          }
+
+                          if (!mounted) return;
+                          Navigator.pop(context);
+                        },
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFFE30D25),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  ),
+                  child: const Text('Thêm vào bàn', style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
               ],
             ),
           );

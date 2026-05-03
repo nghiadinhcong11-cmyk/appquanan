@@ -133,7 +133,7 @@ class _OverviewScreenState extends State<OverviewScreen> {
                     ),
                   const SizedBox(height: 12),
                   if (stats.popularItems.isNotEmpty)
-                    Card(
+                    Card( 
                       child: Padding(
                         padding: const EdgeInsets.all(16),
                         child: Column(

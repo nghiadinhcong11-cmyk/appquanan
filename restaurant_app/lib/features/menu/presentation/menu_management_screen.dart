@@ -113,58 +113,117 @@ class _MenuManagementScreenState extends State<MenuManagementScreen> {
       return;
     }
 
-    await showDialog<void>(
+    await showModalBottomSheet<void>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(editItem == null ? 'Thêm món vào menu' : 'Sửa món'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Tên món')),
-              const SizedBox(height: 12),
-              TextField(controller: priceController, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Giá bán')),
-              const SizedBox(height: 12),
-              TextField(controller: descController, decoration: const InputDecoration(labelText: 'Mô tả')),
-              const SizedBox(height: 12),
-              TextField(controller: imageController, decoration: const InputDecoration(labelText: 'Link hình ảnh')),
-            ],
-          ),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: EdgeInsets.only(
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Hủy')),
-          FilledButton(
-            onPressed: () async {
-              final name = nameController.text.trim();
-              final price = int.tryParse(priceController.text.trim());
-              if (name.isEmpty || price == null || price <= 0) return;
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Icon(editItem == null ? Icons.add_circle_outline : Icons.edit_note, color: const Color(0xFFE30D25)),
+                const SizedBox(width: 8),
+                Text(
+                  editItem == null ? 'Thêm món mới' : 'Chỉnh sửa món ăn',
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                ),
+                const Spacer(),
+                IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+              ],
+            ),
+            const Divider(),
+            const SizedBox(height: 12),
+            TextField(
+              controller: nameController,
+              decoration: InputDecoration(
+                labelText: 'Tên món ăn',
+                hintText: 'VD: Phở bò, Cơm tấm...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.restaurant),
+              ),
+              autofocus: true,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: priceController,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                labelText: 'Giá bán (VNĐ)',
+                hintText: 'VD: 35000',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.payments_outlined),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: descController,
+              decoration: InputDecoration(
+                labelText: 'Mô tả ngắn',
+                hintText: 'Thành phần, hương vị...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.description_outlined),
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: imageController,
+              decoration: InputDecoration(
+                labelText: 'Link hình ảnh',
+                hintText: 'https://...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.image_outlined),
+              ),
+            ),
+            const SizedBox(height: 24),
+            FilledButton(
+              onPressed: () async {
+                final name = nameController.text.trim();
+                final price = int.tryParse(priceController.text.trim());
+                if (name.isEmpty || price == null || price <= 0) return;
 
-              if (editItem == null) {
-                await widget.api.createPrivateMenuItem(
-                  restaurantId: restaurantId,
-                  name: name,
-                  price: price,
-                  description: descController.text.trim(),
-                  imageUrl: imageController.text.trim(),
-                );
-              } else {
-                await widget.api.updatePrivateMenuItem(
-                  restaurantId: restaurantId,
-                  menuId: editItem.id.toString(),
-                  name: name,
-                  price: price,
-                  description: descController.text.trim(),
-                  imageUrl: imageController.text.trim(),
-                );
-              }
+                if (editItem == null) {
+                  await widget.api.createPrivateMenuItem(
+                    restaurantId: restaurantId,
+                    name: name,
+                    price: price,
+                    description: descController.text.trim(),
+                    imageUrl: imageController.text.trim(),
+                  );
+                } else {
+                  await widget.api.updatePrivateMenuItem(
+                    restaurantId: restaurantId,
+                    menuId: editItem.id.toString(),
+                    name: name,
+                    price: price,
+                    description: descController.text.trim(),
+                    imageUrl: imageController.text.trim(),
+                  );
+                }
 
-              if (!mounted) return;
-              Navigator.pop(context);
-              await _loadMenu();
-            },
-            child: const Text('Lưu'),
-          ),
-        ],
+                if (!mounted) return;
+                Navigator.pop(ctx);
+                await _loadMenu();
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFE30D25),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: const Text('Lưu thông tin', style: TextStyle(fontWeight: FontWeight.bold)),
+            ),
+          ],
+        ),
       ),
     );
   }

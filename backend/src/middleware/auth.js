@@ -41,18 +41,20 @@ function permitSystemRoles(roles = []) {
  */
 function permitRestaurantRoles(allowedRoles = []) {
   return async (req, res, next) => {
+    const restaurantId = req.headers['x-restaurant-id'] || req.body.restaurantId || req.query.restaurantId;
+    if (restaurantId) {
+      req.restaurantId = restaurantId.toString();
+    }
+
     if (req.user && req.user.systemRole === 'admin') return next();
 
-    const restaurantId = req.headers['x-restaurant-id'] || req.body.restaurantId || req.query.restaurantId;
-
-    if (!restaurantId) {
+    if (!req.restaurantId) {
        return res.status(400).json({ error: 'Missing restaurant context' });
     }
 
     try {
-      const hasRole = await hasRestaurantRole(pool, req.user.sub, restaurantId, allowedRoles);
+      const hasRole = await hasRestaurantRole(pool, req.user.sub, req.restaurantId, allowedRoles);
       if (!hasRole) {
-        // console.warn(`Access denied: User ${req.user.sub} does not have roles [${allowedRoles}] in restaurant ${restaurantId}`);
         return res.status(403).json({ error: 'Insufficient permissions for this restaurant' });
       }
       next();

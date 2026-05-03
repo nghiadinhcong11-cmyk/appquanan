@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+﻿// ignore_for_file: use_build_context_synchronously
+
+import 'package:flutter/material.dart';
 
 import '../../../core/api/http_api_service.dart';
 import '../../../shared/models/auth_models.dart';
@@ -49,7 +51,6 @@ class HomeShell extends StatefulWidget {
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
-
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
@@ -147,7 +148,8 @@ class _HomeShellState extends State<HomeShell> {
                   const CircleAvatar(radius: 24, child: Icon(Icons.person)),
                   const SizedBox(width: 12),
                   Expanded(
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, 
+                    children: [
                       Text(user.displayName, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 4),
                       Text(widget.roleLabel, style: const TextStyle(color: Colors.white70)),
@@ -276,6 +278,8 @@ class _HomeShellState extends State<HomeShell> {
               onPressed: () async {
                 final err = await widget.onSubmitOwnerApplication(restaurantController.text.trim(), proofController.text.trim());
                 if (!mounted) return;
+                // ignore: duplicate_ignore
+                // ignore: use_build_context_synchronously
                 Navigator.pop(context);
                 ScaffoldMessenger.of(this.context).showSnackBar(SnackBar(content: Text(err ?? 'Đã gửi yêu cầu chủ quán.')));
               },
@@ -363,14 +367,14 @@ class _HomeShellState extends State<HomeShell> {
                   TextField(controller: searchController, decoration: const InputDecoration(labelText: 'Tìm tên cơ sở'), onChanged: (_) => setModalState(() {})),
                   const SizedBox(height: 8),
                   DropdownButtonFormField<String>(
-                    value: selectedRestaurant,
+                    initialValue: selectedRestaurant,
                     items: filtered.map((e) => DropdownMenuItem(value: e, child: Text(e))).toList(),
                     onChanged: (value) => setModalState(() => selectedRestaurant = value),
                     decoration: const InputDecoration(labelText: 'Chọn cơ sở'),
                   ),
                   const SizedBox(height: 12),
                   DropdownButtonFormField<AccountRole>(
-                    value: selectedRole,
+                    initialValue: selectedRole,
                     items: const [
                       DropdownMenuItem(value: AccountRole.waiter, child: Text('Phục vụ (Waiter)')),
                       DropdownMenuItem(value: AccountRole.cashier, child: Text('Thu ngân (Cashier)')),
@@ -403,52 +407,6 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
-  Future<void> _openApproveSheet() async {
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        if (widget.pendingApprovals.isEmpty) {
-          return const Padding(
-            padding: EdgeInsets.all(24),
-            child: Text('Không có yêu cầu nhân sự nào đang chờ.'),
-          );
-        }
-
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          padding: const EdgeInsets.all(12),
-          child: Column(
-            children: [
-              const Text('Phê duyệt nhân sự', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-              const Divider(),
-              Expanded(
-                child: ListView.builder(
-                  itemCount: widget.pendingApprovals.length,
-                  itemBuilder: (context, index) {
-                    final req = widget.pendingApprovals[index];
-                    return Card(
-                      child: ListTile(
-                        title: Text('User: ${req.username}'),
-                        subtitle: Text('Vai trò: ${req.requestedRole.name}\nGhi chú: ${req.note}'),
-                        trailing: FilledButton(
-                          onPressed: () async {
-                            await widget.onApproveStaff(req.id);
-                            if (context.mounted) Navigator.pop(context);
-                          },
-                          child: const Text('Duyệt'),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   Future<void> _openAdminApproveSheet() async {
     await showModalBottomSheet<void>(

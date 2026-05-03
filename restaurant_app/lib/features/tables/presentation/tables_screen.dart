@@ -103,31 +103,53 @@ class _TablesScreenState extends State<TablesScreen> {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (ctx) => Padding(
         padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 16,
+          left: 20,
+          right: 20,
+          top: 20,
+          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Text('Thêm bàn', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                const Icon(Icons.add_circle_outline, color: Color(0xFFE30D25)),
+                const SizedBox(width: 8),
+                const Text('Thêm bàn mới', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                IconButton(onPressed: () => Navigator.pop(ctx), icon: const Icon(Icons.close)),
+              ],
+            ),
+            const Divider(),
             const SizedBox(height: 12),
             TextField(
               controller: nameController,
-              decoration: const InputDecoration(labelText: 'Tên bàn (vd: Bàn 10)'),
+              decoration: InputDecoration(
+                labelText: 'Tên bàn',
+                hintText: 'VD: Bàn 10, VIP 1...',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.table_restaurant),
+              ),
               autofocus: true,
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 16),
             TextField(
               controller: floorController,
               keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Tầng (số)'),
+              decoration: InputDecoration(
+                labelText: 'Tầng / Khu vực',
+                hintText: 'Nhập số tầng (VD: 1, 2)',
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                prefixIcon: const Icon(Icons.layers),
+              ),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
@@ -150,10 +172,14 @@ class _TablesScreenState extends State<TablesScreen> {
                       });
                       Navigator.pop(ctx);
                     },
-                    child: const Text('Lưu tạm (Local)'),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Lưu tạm'),
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
                     onPressed: () async {
@@ -170,7 +196,12 @@ class _TablesScreenState extends State<TablesScreen> {
                       Navigator.pop(ctx);
                       await _loadTables();
                     },
-                    child: const Text('Lưu chính thức'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFFE30D25),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    child: const Text('Lưu hệ thống'),
                   ),
                 ),
               ],
@@ -327,10 +358,10 @@ class _TablesScreenState extends State<TablesScreen> {
                           padding: const EdgeInsets.all(12),
                           itemCount: filtered.length,
                           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                            crossAxisCount: 3,
-                            mainAxisSpacing: 12,
-                            crossAxisSpacing: 12,
-                            childAspectRatio: 0.95,
+                            crossAxisCount: 4,
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 1.0,
                           ),
                           itemBuilder: (context, index) {
                             final table = filtered[index];
@@ -354,12 +385,12 @@ class _TablesScreenState extends State<TablesScreen> {
                               child: Container(
                                 decoration: BoxDecoration(
                                   color: _statusColor(table.state),
-                                  borderRadius: BorderRadius.circular(10),
+                                  borderRadius: BorderRadius.circular(8),
                                   boxShadow: [
                                     BoxShadow(
                                       color: Colors.black.withValues(alpha: 0.05),
-                                      blurRadius: 4,
-                                      offset: const Offset(0, 2),
+                                      blurRadius: 2,
+                                      offset: const Offset(0, 1),
                                     ),
                                   ],
                                 ),
@@ -367,37 +398,46 @@ class _TablesScreenState extends State<TablesScreen> {
                                   children: [
                                     Container(
                                       width: double.infinity,
-                                      padding: const EdgeInsets.symmetric(vertical: 6),
+                                      padding: const EdgeInsets.symmetric(vertical: 3),
                                       decoration: BoxDecoration(
                                         color: table.state == TableState.empty
                                             ? const Color(0xFF949494)
                                             : const Color(0xFFE30D25),
-                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                                        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
                                       ),
                                       child: Text(
                                         table.name,
                                         textAlign: TextAlign.center,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
                                         style: const TextStyle(
                                           color: Colors.white,
-                                          fontWeight: FontWeight.w600,
-                                          fontSize: 12,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 10,
                                         ),
                                       ),
                                     ),
                                     const Spacer(),
+                                    Icon(
+                                      Icons.table_restaurant_outlined,
+                                      size: 18,
+                                      color: table.state == TableState.empty ? Colors.black26 : Colors.white70,
+                                    ),
+                                    const SizedBox(height: 2),
                                     Text(
                                       _statusText(table.state),
+                                      textAlign: TextAlign.center,
                                       style: TextStyle(
                                         fontWeight: FontWeight.bold,
+                                        fontSize: 9,
                                         color: table.state == TableState.empty ? Colors.black54 : Colors.white,
                                       ),
                                     ),
-                                    const SizedBox(height: 4),
                                     Text(
-                                      table.isTemporary ? 'Local draft' : _floorLabel(_floorNumber(table)),
+                                      table.isTemporary ? 'Draft' : _floorLabel(_floorNumber(table)),
                                       style: TextStyle(
-                                        fontSize: 11,
-                                        color: table.state == TableState.empty ? Colors.black54 : Colors.white,
+                                        fontSize: 8,
+                                        color: table.state == TableState.empty ? Colors.black38 : Colors.white70,
                                       ),
                                     ),
                                     const Spacer(),
